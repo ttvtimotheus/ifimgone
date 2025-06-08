@@ -1,0 +1,24 @@
+{
+  "name": "If I'm Gone - Digital Legacy Messages",
+  "short_name": "If I'm Gone",
+  "description": "Create heartfelt final messages for your loved ones, delivered when it matters most.",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#0f172a",
+  "theme_color": "#f59e0b",
+  "orientation": "portrait-primary",
+  "icons": [
+    {
+      "src": "/icon-192x192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "maskable any"
+    },
+    {
+      "src": "/icon-512x512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable any"
+    }
+  ]
+}
