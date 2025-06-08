@@ -29,7 +29,7 @@ interface TwoFactorSetupProps {
 }
 
 export function TwoFactorSetupComponent({ onComplete, onCancel }: TwoFactorSetupProps) {
-  const { user } = useAuth();
+  const { user, refreshTwoFactorStatus } = useAuth();
   const { toast } = useToast();
   const [step, setStep] = useState<'setup' | 'verify' | 'backup'>('setup');
   const [loading, setLoading] = useState(false);
@@ -79,6 +79,7 @@ export function TwoFactorSetupComponent({ onComplete, onCancel }: TwoFactorSetup
       
       if (isValid) {
         setStep('backup');
+        await refreshTwoFactorStatus(); // Update the auth context
         toast({
           title: 'Success',
           description: 'Two-factor authentication has been enabled',
@@ -124,7 +125,7 @@ export function TwoFactorSetupComponent({ onComplete, onCancel }: TwoFactorSetup
   };
 
   const downloadBackupCodes = () => {
-    const content = backupCodes.join('\n');
+    const content = `If I'm Gone - Two-Factor Authentication Backup Codes\n\nGenerated: ${new Date().toLocaleString()}\nUser: ${user?.email}\n\nBackup Codes:\n${backupCodes.join('\n')}\n\nImportant:\n- Each code can only be used once\n- Store these codes in a secure location\n- Use these codes if you lose access to your authenticator app`;
     const blob = new Blob([content], { type: 'text/plain' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');

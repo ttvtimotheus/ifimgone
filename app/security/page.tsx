@@ -10,11 +10,13 @@ import { ProtectedRoute } from '@/components/protected-route';
 import { Navigation } from '@/components/navigation';
 import { SecurityDashboard } from '@/components/security-dashboard';
 import { TwoFactorSetupComponent } from '@/components/two-factor-setup';
+import { useAuth } from '@/hooks/use-auth';
 
 type SecurityView = 'dashboard' | 'setup-2fa';
 
 export default function SecurityPage() {
   const [currentView, setCurrentView] = useState<SecurityView>('dashboard');
+  const { twoFactorEnabled } = useAuth();
 
   const renderContent = () => {
     switch (currentView) {
@@ -26,7 +28,7 @@ export default function SecurityPage() {
           />
         );
       default:
-        return <SecurityDashboard />;
+        return <SecurityDashboard onSetup2FA={() => setCurrentView('setup-2fa')} />;
     }
   };
 
@@ -74,7 +76,7 @@ export default function SecurityPage() {
                   <p className="text-slate-400">{getPageDescription()}</p>
                 </div>
                 
-                {currentView === 'dashboard' && (
+                {currentView === 'dashboard' && !twoFactorEnabled && (
                   <div className="flex space-x-3">
                     <Button
                       onClick={() => setCurrentView('setup-2fa')}

@@ -23,12 +23,15 @@ import { SecurityService, SecurityEvent, LoginAttempt } from '@/lib/security-ser
 import { useAuth } from '@/hooks/use-auth';
 import { formatRelativeTime } from '@/lib/utils';
 
-export function SecurityDashboard() {
-  const { user } = useAuth();
+interface SecurityDashboardProps {
+  onSetup2FA?: () => void;
+}
+
+export function SecurityDashboard({ onSetup2FA }: SecurityDashboardProps) {
+  const { user, twoFactorEnabled, refreshTwoFactorStatus } = useAuth();
   const [securityEvents, setSecurityEvents] = useState<SecurityEvent[]>([]);
   const [loginAttempts, setLoginAttempts] = useState<LoginAttempt[]>([]);
   const [loading, setLoading] = useState(true);
-  const [twoFactorEnabled, setTwoFactorEnabled] = useState(false);
   const securityService = SecurityService.getInstance();
 
   useEffect(() => {
@@ -50,10 +53,9 @@ export function SecurityDashboard() {
 
       setSecurityEvents(events);
       setLoginAttempts(attempts);
-
-      // Check if 2FA is enabled
-      // This would come from the user profile in a real implementation
-      setTwoFactorEnabled(false); // Placeholder
+      
+      // Refresh 2FA status
+      await refreshTwoFactorStatus();
     } catch (error) {
       console.error('Error fetching security data:', error);
     } finally {
@@ -73,6 +75,8 @@ export function SecurityDashboard() {
     switch (eventType) {
       case '2fa_enabled':
       case '2fa_disabled':
+      case '2fa_setup_initiated':
+      case '2fa_login_success':
         return <Key className="w-4 h-4" />;
       case 'password_change':
         return <Shield className="w-4 h-4" />;
@@ -147,6 +151,15 @@ export function SecurityDashboard() {
       </div>
 
       {/* Security Alerts */}
+      {!twoFactorEnabled && (
+        <Alert className="border-yellow-500/50 bg-yellow-500/10">
+          <AlertTriangle className="w-4 h-4" />
+          <AlertDescription className="text-yellow-300">
+            <strong>Recommendation:</strong> Enable two-factor authentication to secure your account and protect your digital legacy messages.
+          </AlertDescription>
+        </Alert>
+      )}
+
       {securityEvents.some(e => e.severity === 'critical' && !e.resolved) && (
         <Alert className="border-red-500/50 bg-red-500/10">
           <AlertTriangle className="w-4 h-4" />
@@ -194,7 +207,7 @@ export function SecurityDashboard() {
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center justify-between">
                       <p className="text-white font-medium capitalize">
-                        {event.event_type.replace('_', ' ')}
+                        {event.event_type.replace(/_/g, ' ')}
                       </p>
                       <Badge variant="outline" className={getSeverityColor(event.severity)}>
                         {event.severity}
@@ -290,8 +303,11 @@ export function SecurityDashboard() {
         <CardContent className="space-y-4">
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <Button 
-              className="bg-amber-500 hover:bg-amber-600 text-slate-950 font-semibold"
-              disabled={twoFactorEnabled}
+              onClick={onSetup2FA}
+              className={twoFactorEnabled 
+                ? "bg-green-500 hover:bg-green-600 text-white font-semibold"
+                : "bg-amber-500 hover:bg-amber-600 text-slate-950 font-semibold"
+              }
             >
               <Key className="w-4 h-4 mr-2" />
               {twoFactorEnabled ? '2FA Enabled' : 'Enable 2FA'}
