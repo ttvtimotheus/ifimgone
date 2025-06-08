@@ -10,6 +10,7 @@ import Link from 'next/link';
 import { useAuth } from '@/hooks/use-auth';
 import { ProtectedRoute } from '@/components/protected-route';
 import { Navigation } from '@/components/navigation';
+import { ProfileCompletionWidget } from '@/components/profile-completion-widget';
 import { supabase } from '@/lib/supabase';
 import { useToast } from '@/hooks/use-toast';
 
@@ -36,6 +37,7 @@ export default function Dashboard() {
   const [messages, setMessages] = useState<Message[]>([]);
   const [loading, setLoading] = useState(true);
   const [trustedContacts, setTrustedContacts] = useState(0);
+  const [showProfileWidget, setShowProfileWidget] = useState(true);
   
   // Fetch messages from Supabase
   useEffect(() => {
@@ -140,55 +142,69 @@ export default function Dashboard() {
               </Link>
             </div>
 
-            {/* Stats Grid */}
-            <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
-              <Card className="border-slate-800 bg-slate-900/50">
-                <CardContent className="p-6">
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <p className="text-slate-400 text-sm">Total Messages</p>
-                      <p className="text-2xl font-bold text-white">{stats.totalMessages}</p>
-                    </div>
-                    <MessageSquare className="w-8 h-8 text-amber-500" />
-                  </div>
-                </CardContent>
-              </Card>
+            <div className="grid grid-cols-1 lg:grid-cols-4 gap-6 mb-8">
+              {/* Profile Completion Widget */}
+              <div className="lg:col-span-1">
+                {showProfileWidget && (
+                  <ProfileCompletionWidget 
+                    onDismiss={() => setShowProfileWidget(false)}
+                    showDismiss={true}
+                  />
+                )}
+              </div>
 
-              <Card className="border-slate-800 bg-slate-900/50">
-                <CardContent className="p-6">
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <p className="text-slate-400 text-sm">Active</p>
-                      <p className="text-2xl font-bold text-white">{stats.activeMessages}</p>
-                    </div>
-                    <Shield className="w-8 h-8 text-green-500" />
-                  </div>
-                </CardContent>
-              </Card>
+              {/* Stats Grid */}
+              <div className="lg:col-span-3">
+                <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
+                  <Card className="border-slate-800 bg-slate-900/50">
+                    <CardContent className="p-6">
+                      <div className="flex items-center justify-between">
+                        <div>
+                          <p className="text-slate-400 text-sm">Total Messages</p>
+                          <p className="text-2xl font-bold text-white">{stats.totalMessages}</p>
+                        </div>
+                        <MessageSquare className="w-8 h-8 text-amber-500" />
+                      </div>
+                    </CardContent>
+                  </Card>
 
-              <Card className="border-slate-800 bg-slate-900/50">
-                <CardContent className="p-6">
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <p className="text-slate-400 text-sm">Trusted Contacts</p>
-                      <p className="text-2xl font-bold text-white">{stats.trustedContacts}</p>
-                    </div>
-                    <Users className="w-8 h-8 text-blue-500" />
-                  </div>
-                </CardContent>
-              </Card>
+                  <Card className="border-slate-800 bg-slate-900/50">
+                    <CardContent className="p-6">
+                      <div className="flex items-center justify-between">
+                        <div>
+                          <p className="text-slate-400 text-sm">Active</p>
+                          <p className="text-2xl font-bold text-white">{stats.activeMessages}</p>
+                        </div>
+                        <Shield className="w-8 h-8 text-green-500" />
+                      </div>
+                    </CardContent>
+                  </Card>
 
-              <Card className="border-slate-800 bg-slate-900/50">
-                <CardContent className="p-6">
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <p className="text-slate-400 text-sm">Last Active</p>
-                      <p className="text-sm font-medium text-white">Today</p>
-                    </div>
-                    <Clock className="w-8 h-8 text-purple-500" />
-                  </div>
-                </CardContent>
-              </Card>
+                  <Card className="border-slate-800 bg-slate-900/50">
+                    <CardContent className="p-6">
+                      <div className="flex items-center justify-between">
+                        <div>
+                          <p className="text-slate-400 text-sm">Trusted Contacts</p>
+                          <p className="text-2xl font-bold text-white">{stats.trustedContacts}</p>
+                        </div>
+                        <Users className="w-8 h-8 text-blue-500" />
+                      </div>
+                    </CardContent>
+                  </Card>
+
+                  <Card className="border-slate-800 bg-slate-900/50">
+                    <CardContent className="p-6">
+                      <div className="flex items-center justify-between">
+                        <div>
+                          <p className="text-slate-400 text-sm">Last Active</p>
+                          <p className="text-sm font-medium text-white">Today</p>
+                        </div>
+                        <Clock className="w-8 h-8 text-purple-500" />
+                      </div>
+                    </CardContent>
+                  </Card>
+                </div>
+              </div>
             </div>
 
             {/* Messages List */}
