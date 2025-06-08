@@ -7,7 +7,8 @@ import { Input } from '@/components/ui/input';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Label } from '@/components/ui/label';
 import { Alert, AlertDescription } from '@/components/ui/alert';
-import { Heart, Mail, Lock, ArrowLeft } from 'lucide-react';
+import { Separator } from '@/components/ui/separator';
+import { Heart, Mail, Lock, ArrowLeft, Chrome, Loader2 } from 'lucide-react';
 import Link from 'next/link';
 import { useAuth } from '@/hooks/use-auth';
 
@@ -17,8 +18,9 @@ export default function AuthPage() {
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [loading, setLoading] = useState(false);
+  const [googleLoading, setGoogleLoading] = useState(false);
   const [error, setError] = useState('');
-  const { signIn, signUp } = useAuth();
+  const { signIn, signUp, signInWithGoogle } = useAuth();
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -39,6 +41,18 @@ export default function AuthPage() {
       setError(err.message || 'An error occurred');
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleGoogleSignIn = async () => {
+    setError('');
+    setGoogleLoading(true);
+    
+    try {
+      await signInWithGoogle();
+    } catch (err: any) {
+      setError(err.message || 'Failed to sign in with Google');
+      setGoogleLoading(false);
     }
   };
 
@@ -86,7 +100,32 @@ export default function AuthPage() {
                 }
               </CardDescription>
             </CardHeader>
-            <CardContent>
+            <CardContent className="space-y-6">
+              {/* Google OAuth Button */}
+              <Button 
+                onClick={handleGoogleSignIn}
+                disabled={loading || googleLoading}
+                className="w-full bg-white hover:bg-gray-100 text-gray-900 font-semibold border border-gray-300 transition-colors"
+                variant="outline"
+              >
+                {googleLoading ? (
+                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                ) : (
+                  <Chrome className="w-4 h-4 mr-2" />
+                )}
+                Continue with Google
+              </Button>
+
+              <div className="relative">
+                <div className="absolute inset-0 flex items-center">
+                  <Separator className="w-full bg-slate-700" />
+                </div>
+                <div className="relative flex justify-center text-xs uppercase">
+                  <span className="bg-slate-900 px-2 text-slate-400">Or continue with email</span>
+                </div>
+              </div>
+
+              {/* Email/Password Form */}
               <form onSubmit={handleSubmit} className="space-y-4">
                 <div className="space-y-2">
                   <Label htmlFor="email" className="text-slate-300">Email</Label>
@@ -100,6 +139,7 @@ export default function AuthPage() {
                       onChange={(e) => setEmail(e.target.value)}
                       className="pl-10 bg-slate-800 border-slate-700 text-white placeholder:text-slate-400"
                       required
+                      disabled={loading || googleLoading}
                     />
                   </div>
                 </div>
@@ -116,6 +156,7 @@ export default function AuthPage() {
                       onChange={(e) => setPassword(e.target.value)}
                       className="pl-10 bg-slate-800 border-slate-700 text-white placeholder:text-slate-400"
                       required
+                      disabled={loading || googleLoading}
                     />
                   </div>
                 </div>
@@ -133,6 +174,7 @@ export default function AuthPage() {
                         onChange={(e) => setConfirmPassword(e.target.value)}
                         className="pl-10 bg-slate-800 border-slate-700 text-white placeholder:text-slate-400"
                         required
+                        disabled={loading || googleLoading}
                       />
                     </div>
                   </div>
@@ -149,9 +191,16 @@ export default function AuthPage() {
                 <Button 
                   type="submit" 
                   className="w-full bg-amber-500 hover:bg-amber-600 text-slate-950 font-semibold"
-                  disabled={loading}
+                  disabled={loading || googleLoading}
                 >
-                  {loading ? 'Please wait...' : (isSignUp ? 'Create Account' : 'Sign In')}
+                  {loading ? (
+                    <>
+                      <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                      Please wait...
+                    </>
+                  ) : (
+                    isSignUp ? 'Create Account' : 'Sign In'
+                  )}
                 </Button>
 
                 <div className="text-center">
@@ -159,6 +208,7 @@ export default function AuthPage() {
                     type="button"
                     onClick={() => setIsSignUp(!isSignUp)}
                     className="text-amber-400 hover:text-amber-300 text-sm transition-colors"
+                    disabled={loading || googleLoading}
                   >
                     {isSignUp 
                       ? 'Already have an account? Sign in'
