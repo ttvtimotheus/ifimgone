@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import React, { useState } from 'react';
 import { motion } from 'framer-motion';
 import { Button } from '@/components/ui/button';
 import { Heart, Menu, X, Home, Settings, Plus, LogOut } from 'lucide-react';
@@ -37,7 +37,7 @@ export function Navigation() {
                 href={item.href}
                 className="flex items-center text-slate-300 hover:text-white transition-colors"
               >
-                {React.createElement(item.icon, { className: "w-4 h-4 mr-2" })}
+                <item.icon className="w-4 h-4 mr-2" />
                 {item.label}
               </Link>
             ))}
@@ -80,7 +80,7 @@ export function Navigation() {
                   className="flex items-center text-slate-300 hover:text-white transition-colors py-2"
                   onClick={() => setIsOpen(false)}
                 >
-                  {React.createElement(item.icon, { className: "w-4 h-4 mr-2" })}
+                  <item.icon className="w-4 h-4 mr-2" />
                   {item.label}
                 </Link>
               ))}
