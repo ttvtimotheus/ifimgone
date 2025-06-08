@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import React, { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -117,7 +117,7 @@ export default function CreateMessage() {
                       ? 'bg-amber-500 border-amber-500 text-slate-950' 
                       : 'border-slate-600 text-slate-600'
                   }`}>
-                    {React.createElement(step.icon, { className: "w-5 h-5" })}
+                    <step.icon className="w-5 h-5" />
                   </div>
                   {index < steps.length - 1 && (
                     <div className={`hidden md:block w-16 h-0.5 mx-4 transition-all ${
@@ -199,11 +199,9 @@ export default function CreateMessage() {
                             onClick={() => handleInputChange('format', format.id)}
                           >
                             <CardContent className="p-6 text-center">
-                              {React.createElement(format.icon, { 
-                                className: `w-12 h-12 mx-auto mb-4 ${
-                                  formData.format === format.id ? 'text-amber-500' : 'text-slate-400'
-                                }`
-                              })}
+                              <format.icon className={`w-12 h-12 mx-auto mb-4 ${
+                                formData.format === format.id ? 'text-amber-500' : 'text-slate-400'
+                              }`} />
                               <h3 className="text-lg font-semibold text-white mb-2">{format.title}</h3>
                               <p className="text-slate-400 text-sm">{format.description}</p>
                             </CardContent>
