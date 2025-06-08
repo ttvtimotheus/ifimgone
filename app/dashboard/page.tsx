@@ -5,45 +5,113 @@ import { motion } from 'framer-motion';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
-import { MessageSquare, Plus, Settings, Heart, Clock, Shield, Users } from 'lucide-react';
+import { MessageSquare, Plus, Settings, Heart, Clock, Shield, Users, Loader2 } from 'lucide-react';
 import Link from 'next/link';
 import { useAuth } from '@/hooks/use-auth';
 import { ProtectedRoute } from '@/components/protected-route';
 import { Navigation } from '@/components/navigation';
+import { supabase } from '@/lib/supabase';
+import { useToast } from '@/hooks/use-toast';
 
-// Mock data for demonstration
-const mockMessages = [
-  {
-    id: 1,
-    title: "For My Dear Sarah",
-    recipient: "Sarah Johnson",
-    type: "text",
-    status: "sealed",
-    createdAt: "2024-01-15",
-    triggerType: "inactivity",
-    triggerValue: "6 months"
-  },
-  {
-    id: 2,
-    title: "To My Son on His Wedding Day",
-    recipient: "Michael Thompson",
-    type: "video",
-    status: "sealed", 
-    createdAt: "2024-01-10",
-    triggerType: "manual",
-    triggerValue: "trusted contact"
-  }
-];
+// Define types for our data
+type Message = {
+  id: string;
+  title: string;
+  content: string;
+  status: string;
+  trigger_type: string;
+  trigger_date?: string;
+  created_at: string;
+  updated_at: string;
+  recipient?: {
+    name: string;
+    email: string;
+    relationship: string;
+  };
+};
 
 export default function Dashboard() {
   const { user } = useAuth();
-  const [messages, setMessages] = useState(mockMessages);
+  const { toast } = useToast();
+  const [messages, setMessages] = useState<Message[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [trustedContacts, setTrustedContacts] = useState(0);
+  
+  // Fetch messages from Supabase
+  useEffect(() => {
+    async function fetchMessages() {
+      if (!user) return;
+      
+      try {
+        setLoading(true);
+        
+        // Fetch messages
+        const { data: messagesData, error: messagesError } = await supabase
+          .from('messages')
+          .select('*')
+          .eq('user_id', user.id);
+          
+        if (messagesError) throw messagesError;
+        
+        // Fetch recipients for each message
+        const messagesWithRecipients = await Promise.all(
+          messagesData.map(async (message) => {
+            const { data: recipientData, error: recipientError } = await supabase
+              .from('message_recipients')
+              .select('recipient_id')
+              .eq('message_id', message.id)
+              .single();
+              
+            if (recipientError) return message;
+            
+            const { data: recipient, error: recipientDetailsError } = await supabase
+              .from('recipients')
+              .select('*')
+              .eq('id', recipientData.recipient_id)
+              .single();
+              
+            if (recipientDetailsError) return message;
+            
+            return {
+              ...message,
+              recipient
+            };
+          })
+        );
+        
+        setMessages(messagesWithRecipients);
+        
+        // Fetch trusted contacts count
+        const { count, error: contactsError } = await supabase
+          .from('trusted_contacts')
+          .select('*', { count: 'exact', head: true })
+          .eq('user_id', user.id);
+          
+        if (!contactsError) {
+          setTrustedContacts(count || 0);
+        }
+      } catch (error) {
+        console.error('Error fetching data:', error);
+        toast({
+          title: 'Error',
+          description: 'Failed to load your messages',
+          variant: 'destructive'
+        });
+      } finally {
+        setLoading(false);
+      }
+    }
+    
+    fetchMessages();
+  }, [user, toast]);
 
   const stats = {
     totalMessages: messages.length,
-    activeMessages: messages.filter(m => m.status === 'sealed').length,
-    trustedContacts: 2,
-    lastActivity: new Date().toLocaleDateString()
+    activeMessages: messages.filter(m => m.status === 'draft').length,
+    trustedContacts: trustedContacts,
+    lastActivity: user?.user_metadata?.last_sign_in_at 
+      ? new Date(user.user_metadata.last_sign_in_at).toLocaleDateString() 
+      : new Date().toLocaleDateString()
   };
 
   return (
@@ -127,7 +195,14 @@ export default function Dashboard() {
             <div className="space-y-6">
               <h2 className="text-xl font-semibold text-white">Your Messages</h2>
               
-              {messages.length === 0 ? (
+              {loading ? (
+                <Card className="border-slate-800 bg-slate-900/50">
+                  <CardContent className="p-12 text-center">
+                    <Loader2 className="w-8 h-8 text-amber-500 mx-auto mb-4 animate-spin" />
+                    <p className="text-slate-400">Loading your messages...</p>
+                  </CardContent>
+                </Card>
+              ) : messages.length === 0 ? (
                 <Card className="border-slate-800 bg-slate-900/50">
                   <CardContent className="p-12 text-center">
                     <Heart className="w-16 h-16 text-slate-600 mx-auto mb-4" />
@@ -160,7 +235,7 @@ export default function Dashboard() {
                                   variant="secondary" 
                                   className="bg-amber-500/20 text-amber-400 border-amber-500/30"
                                 >
-                                  {message.type}
+                                  {message.content.length > 100 ? 'text' : 'note'}
                                 </Badge>
                                 <Badge 
                                   variant="outline" 
@@ -169,12 +244,12 @@ export default function Dashboard() {
                                   {message.status}
                                 </Badge>
                               </div>
-                              <p className="text-slate-400 mb-2">For: {message.recipient}</p>
+                              <p className="text-slate-400 mb-2">For: {message.recipient?.name || 'Unknown Recipient'}</p>
                               <p className="text-sm text-slate-500">
-                                Trigger: {message.triggerType} - {message.triggerValue}
+                                Trigger: {message.trigger_type} {message.trigger_date ? `- ${message.trigger_date}` : ''}
                               </p>
                               <p className="text-xs text-slate-600 mt-1">
-                                Created: {message.createdAt}
+                                Created: {new Date(message.created_at).toLocaleDateString()}
                               </p>
                             </div>
                             

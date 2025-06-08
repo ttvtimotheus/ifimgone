@@ -12,6 +12,9 @@ import { ArrowLeft, ArrowRight, Heart, MessageSquare, Mic, Video, Image, Clock, 
 import Link from 'next/link';
 import { ProtectedRoute } from '@/components/protected-route';
 import { Navigation } from '@/components/navigation';
+import { supabase } from '@/lib/supabase';
+import { useAuth } from '@/hooks/use-auth';
+import { useToast } from '@/hooks/use-toast';
 
 const steps = [
   { id: 'recipient', title: 'Choose Recipient', icon: Heart },
@@ -37,6 +40,9 @@ const triggerTypes = [
 
 export default function CreateMessage() {
   const [currentStep, setCurrentStep] = useState(0);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const { user } = useAuth();
+  const { toast } = useToast();
   const [formData, setFormData] = useState({
     recipientName: '',
     recipientEmail: '',
@@ -55,6 +61,92 @@ export default function CreateMessage() {
   const handleNext = () => {
     if (currentStep < steps.length - 1) {
       setCurrentStep(currentStep + 1);
+    }
+  };
+
+  const saveMessage = async () => {
+    if (!user) {
+      toast({
+        title: 'Error',
+        description: 'You must be logged in to save a message',
+        variant: 'destructive'
+      });
+      return;
+    }
+
+    setIsSubmitting(true);
+
+    try {
+      // 1. Save the recipient
+      const { data: recipientData, error: recipientError } = await supabase
+        .from('recipients')
+        .insert({
+          name: formData.recipientName,
+          email: formData.recipientEmail,
+          relationship: formData.relationship,
+          user_id: user.id
+        })
+        .select()
+        .single();
+
+      if (recipientError) throw recipientError;
+
+      // 2. Save the message
+      const triggerSettings: {
+        trigger_type?: 'inactivity' | 'date' | 'manual' | 'location';
+        trigger_date?: string;
+      } = {};
+      
+      if (formData.triggerType === 'inactivity') {
+        triggerSettings.trigger_type = 'inactivity';
+      } else if (formData.triggerType === 'date') {
+        triggerSettings.trigger_type = 'date';
+        triggerSettings.trigger_date = formData.triggerValue;
+      } else if (formData.triggerType === 'manual') {
+        triggerSettings.trigger_type = 'manual';
+      }
+
+      const { data: messageData, error: messageError } = await supabase
+        .from('messages')
+        .insert({
+          user_id: user.id,
+          title: formData.title,
+          content: formData.content,
+          status: 'draft',
+          ...triggerSettings
+        })
+        .select()
+        .single();
+
+      if (messageError) throw messageError;
+
+      // 3. Link message and recipient
+      const { error: linkError } = await supabase
+        .from('message_recipients')
+        .insert({
+          message_id: messageData.id,
+          recipient_id: recipientData.id
+        });
+
+      if (linkError) throw linkError;
+
+      toast({
+        title: 'Success',
+        description: 'Your message has been saved',
+        variant: 'default'
+      });
+
+      // Navigate to dashboard
+      window.location.href = '/dashboard';
+    } catch (error) {
+      console.error('Error saving message:', error);
+      toast({
+        title: 'Error',
+        description: 'Failed to save your message. Please try again.',
+        variant: 'destructive'
+      });
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
@@ -366,12 +458,23 @@ export default function CreateMessage() {
               </Button>
               
               {currentStep === steps.length - 1 ? (
-                <Link href="/dashboard">
-                  <Button className="bg-amber-500 hover:bg-amber-600 text-slate-950 font-semibold">
-                    <Heart className="w-4 h-4 mr-2" />
-                    Save Message
-                  </Button>
-                </Link>
+                <Button 
+                  className="bg-amber-500 hover:bg-amber-600 text-slate-950 font-semibold"
+                  onClick={saveMessage}
+                  disabled={isSubmitting}
+                >
+                  {isSubmitting ? (
+                    <>
+                      <div className="animate-spin mr-2 h-4 w-4 border-2 border-slate-950 rounded-full border-t-transparent"></div>
+                      Saving...
+                    </>
+                  ) : (
+                    <>
+                      <Heart className="w-4 h-4 mr-2" />
+                      Save Message
+                    </>
+                  )}
+                </Button>
               ) : (
                 <Button 
                   onClick={handleNext}
