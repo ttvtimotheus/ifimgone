@@ -3,7 +3,7 @@
 import React, { useState } from 'react';
 import { motion } from 'framer-motion';
 import { Button } from '@/components/ui/button';
-import { Heart, Menu, X, Home, Settings, Plus, LogOut, User } from 'lucide-react';
+import { Heart, Menu, X, Home, Settings, Plus, LogOut, User, Shield } from 'lucide-react';
 import Link from 'next/link';
 import { useAuth } from '@/hooks/use-auth';
 
@@ -15,6 +15,7 @@ export function Navigation() {
     { href: '/dashboard', label: 'Dashboard', icon: Home },
     { href: '/create-message', label: 'Create Message', icon: Plus },
     { href: '/profile', label: 'Profile', icon: User },
+    { href: '/security', label: 'Security', icon: Shield },
     { href: '/settings', label: 'Settings', icon: Settings },
   ];
 
