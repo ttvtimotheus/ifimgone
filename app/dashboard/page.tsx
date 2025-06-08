@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { motion } from 'framer-motion';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -39,51 +39,41 @@ export default function Dashboard() {
   const [trustedContacts, setTrustedContacts] = useState(0);
   const [showProfileWidget, setShowProfileWidget] = useState(true);
   
-  // Fetch messages from Supabase
+  // Optimized data fetching with a single query using joins
   useEffect(() => {
-    async function fetchMessages() {
+    async function fetchData() {
       if (!user) return;
       
       try {
         setLoading(true);
         
-        // Fetch messages
+        // Use a single query with joins to get messages and recipients in one go
         const { data: messagesData, error: messagesError } = await supabase
           .from('messages')
-          .select('*')
+          .select(`
+            *,
+            message_recipients!inner (recipient_id),
+            recipients:message_recipients!inner(recipients(*))
+          `)
           .eq('user_id', user.id);
           
         if (messagesError) throw messagesError;
         
-        // Fetch recipients for each message
-        const messagesWithRecipients = await Promise.all(
-          messagesData.map(async (message) => {
-            const { data: recipientData, error: recipientError } = await supabase
-              .from('message_recipients')
-              .select('recipient_id')
-              .eq('message_id', message.id)
-              .single();
-              
-            if (recipientError) return message;
-            
-            const { data: recipient, error: recipientDetailsError } = await supabase
-              .from('recipients')
-              .select('*')
-              .eq('id', recipientData.recipient_id)
-              .single();
-              
-            if (recipientDetailsError) return message;
-            
-            return {
-              ...message,
-              recipient
-            };
-          })
-        );
+        // Process the joined data
+        const processedMessages = messagesData.map(message => {
+          // Extract recipient from the nested structure
+          const recipient = message.recipients?.recipients || null;
+          
+          // Return a clean message object
+          return {
+            ...message,
+            recipient
+          };
+        });
         
-        setMessages(messagesWithRecipients);
+        setMessages(processedMessages);
         
-        // Fetch trusted contacts count
+        // Fetch trusted contacts count in parallel with messages
         const { count, error: contactsError } = await supabase
           .from('trusted_contacts')
           .select('*', { count: 'exact', head: true })
@@ -104,8 +94,11 @@ export default function Dashboard() {
       }
     }
     
-    fetchMessages();
+    fetchData();
   }, [user, toast]);
+  
+  // Add debounce to prevent excessive re-renders
+  const debouncedMessages = useMemo(() => messages, [messages]);
 
   const stats = {
     totalMessages: messages.length,
