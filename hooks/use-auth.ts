@@ -4,6 +4,7 @@ import { useState, useEffect, createContext, useContext } from 'react';
 import { User } from '@supabase/supabase-js';
 import { supabase } from '@/lib/supabase';
 import { useRouter } from 'next/navigation';
+import { InactivityChecker } from '@/lib/inactivity-checker';
 
 interface AuthContextType {
   user: User | null;
@@ -37,8 +38,30 @@ export function useAuth() {
         setUser(session?.user ?? null);
         setLoading(false);
         
-        // Redirect to dashboard on sign in
+        // Handle user activity tracking
         if (event === 'SIGNED_IN' && session?.user) {
+          // Update last_active timestamp
+          await supabase
+            .from('profiles')
+            .update({ last_active: new Date().toISOString() })
+            .eq('id', session.user.id);
+
+          // Respond to any pending inactivity checks
+          const inactivityChecker = InactivityChecker.getInstance();
+          await inactivityChecker.respondToInactivityCheck(session.user.id);
+
+          // Log the sign-in activity
+          await supabase
+            .from('activity_logs')
+            .insert({
+              user_id: session.user.id,
+              action: 'user_signed_in',
+              details: {
+                timestamp: new Date().toISOString(),
+                user_agent: navigator.userAgent
+              }
+            });
+
           router.push('/dashboard');
         }
       }
@@ -47,6 +70,38 @@ export function useAuth() {
     return () => subscription.unsubscribe();
   }, [router]);
 
+  // Track user activity while they're using the app
+  useEffect(() => {
+    if (!user) return;
+
+    const updateActivity = async () => {
+      await supabase
+        .from('profiles')
+        .update({ last_active: new Date().toISOString() })
+        .eq('id', user.id);
+    };
+
+    // Update activity every 5 minutes while user is active
+    const activityInterval = setInterval(updateActivity, 5 * 60 * 1000);
+
+    // Update activity on user interactions
+    const handleUserActivity = () => {
+      updateActivity();
+    };
+
+    // Listen for user interactions
+    document.addEventListener('click', handleUserActivity);
+    document.addEventListener('keypress', handleUserActivity);
+    document.addEventListener('scroll', handleUserActivity);
+
+    return () => {
+      clearInterval(activityInterval);
+      document.removeEventListener('click', handleUserActivity);
+      document.removeEventListener('keypress', handleUserActivity);
+      document.removeEventListener('scroll', handleUserActivity);
+    };
+  }, [user]);
+
   const signIn = async (email: string, password: string) => {
     const { error } = await supabase.auth.signInWithPassword({
       email,
@@ -54,7 +109,7 @@ export function useAuth() {
     });
     
     if (error) throw error;
-    router.push('/dashboard');
+    // Navigation will be handled by the auth state change listener
   };
 
   const signUp = async (email: string, password: string) => {
@@ -64,7 +119,7 @@ export function useAuth() {
     });
     
     if (error) throw error;
-    router.push('/dashboard');
+    // Navigation will be handled by the auth state change listener
   };
 
   const signInWithGoogle = async () => {
@@ -80,6 +135,19 @@ export function useAuth() {
   };
 
   const signOut = async () => {
+    if (user) {
+      // Log the sign-out activity
+      await supabase
+        .from('activity_logs')
+        .insert({
+          user_id: user.id,
+          action: 'user_signed_out',
+          details: {
+            timestamp: new Date().toISOString()
+          }
+        });
+    }
+
     const { error } = await supabase.auth.signOut();
     if (error) throw error;
     router.push('/');
