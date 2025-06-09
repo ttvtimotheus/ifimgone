@@ -8,10 +8,14 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { ArrowLeft, ArrowRight, Heart, MessageSquare, Mic, Video, Image, Clock, Shield, Eye } from 'lucide-react';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { ArrowLeft, ArrowRight, Heart, MessageSquare, Mic, Video, Image, Clock, Shield, Eye, Upload, FileText } from 'lucide-react';
 import Link from 'next/link';
 import { ProtectedRoute } from '@/components/protected-route';
 import { Navigation } from '@/components/navigation';
+import { MediaRecorder } from '@/components/media-recorder';
+import { FileUploader } from '@/components/file-uploader';
+import { MessageTemplates } from '@/components/message-templates';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/hooks/use-auth';
 import { useToast } from '@/hooks/use-toast';
@@ -29,7 +33,7 @@ const messageFormats = [
   { id: 'text', title: 'Text Message', description: 'Write a heartfelt letter', icon: MessageSquare },
   { id: 'audio', title: 'Voice Recording', description: 'Record your voice', icon: Mic },
   { id: 'video', title: 'Video Message', description: 'Record a video message', icon: Video },
-  { id: 'mixed', title: 'Text + Media', description: 'Combine text with photos', icon: Image },
+  { id: 'mixed', title: 'Rich Content', description: 'Combine text, media, and files', icon: Image },
 ];
 
 const triggerTypes = [
@@ -54,6 +58,9 @@ export default function CreateMessage() {
     triggerValue: '',
     hasPin: false,
     pin: '',
+    attachments: [] as string[],
+    recordingBlob: null as Blob | null,
+    contentType: 'text' as string,
   });
 
   const currentStepId = steps[currentStep].id;
@@ -62,6 +69,35 @@ export default function CreateMessage() {
     if (currentStep < steps.length - 1) {
       setCurrentStep(currentStep + 1);
     }
+  };
+
+  const handlePrevious = () => {
+    if (currentStep > 0) {
+      setCurrentStep(currentStep - 1);
+    }
+  };
+
+  const handleInputChange = (field: string, value: string | boolean | Blob | null) => {
+    setFormData(prev => ({ ...prev, [field]: value }));
+  };
+
+  const handleTemplateSelect = (content: string) => {
+    setFormData(prev => ({ ...prev, content }));
+  };
+
+  const handleFileUploaded = (file: File, uploadPath: string) => {
+    setFormData(prev => ({
+      ...prev,
+      attachments: [...prev.attachments, uploadPath]
+    }));
+  };
+
+  const handleRecordingComplete = (blob: Blob, type: 'audio' | 'video') => {
+    setFormData(prev => ({
+      ...prev,
+      recordingBlob: blob,
+      contentType: type
+    }));
   };
 
   const saveMessage = async () => {
@@ -95,6 +131,8 @@ export default function CreateMessage() {
       const triggerSettings: {
         trigger_type?: 'inactivity' | 'date' | 'manual' | 'location';
         trigger_date?: string;
+        content_type?: string;
+        media_duration?: number;
       } = {};
       
       if (formData.triggerType === 'inactivity') {
@@ -106,6 +144,15 @@ export default function CreateMessage() {
         triggerSettings.trigger_type = 'manual';
       }
 
+      // Set content type based on format
+      if (formData.format === 'audio' || formData.format === 'video') {
+        triggerSettings.content_type = formData.format;
+      } else if (formData.format === 'mixed') {
+        triggerSettings.content_type = 'rich';
+      } else {
+        triggerSettings.content_type = 'text';
+      }
+
       const { data: messageData, error: messageError } = await supabase
         .from('messages')
         .insert({
@@ -113,6 +160,7 @@ export default function CreateMessage() {
           title: formData.title,
           content: formData.content,
           status: 'draft',
+          pin_hash: formData.hasPin && formData.pin ? await hashPin(formData.pin) : null,
           ...triggerSettings
         })
         .select()
@@ -129,6 +177,23 @@ export default function CreateMessage() {
         });
 
       if (linkError) throw linkError;
+
+      // 4. Handle attachments if any
+      if (formData.attachments.length > 0) {
+        const attachmentPromises = formData.attachments.map(async (attachmentPath) => {
+          return supabase
+            .from('attachments')
+            .insert({
+              message_id: messageData.id,
+              file_name: attachmentPath.split('/').pop() || 'attachment',
+              file_type: 'unknown',
+              file_size: 0,
+              storage_path: attachmentPath
+            });
+        });
+
+        await Promise.all(attachmentPromises);
+      }
 
       toast({
         title: 'Success',
@@ -150,14 +215,12 @@ export default function CreateMessage() {
     }
   };
 
-  const handlePrevious = () => {
-    if (currentStep > 0) {
-      setCurrentStep(currentStep - 1);
-    }
-  };
-
-  const handleInputChange = (field: string, value: string) => {
-    setFormData(prev => ({ ...prev, [field]: value }));
+  const hashPin = async (pin: string): Promise<string> => {
+    const encoder = new TextEncoder();
+    const data = encoder.encode(pin);
+    const hashBuffer = await crypto.subtle.digest('SHA-256', data);
+    const hashArray = Array.from(new Uint8Array(hashBuffer));
+    return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
   };
 
   const canProceed = () => {
@@ -167,7 +230,7 @@ export default function CreateMessage() {
       case 'format':
         return formData.format;
       case 'content':
-        return formData.title && formData.content;
+        return formData.title && (formData.content || formData.recordingBlob || formData.attachments.length > 0);
       case 'trigger':
         return formData.triggerType && formData.triggerValue;
       case 'security':
@@ -182,7 +245,7 @@ export default function CreateMessage() {
       <div className="min-h-screen bg-slate-950">
         <Navigation />
         
-        <div className="container mx-auto px-4 py-8 pt-20 max-w-4xl">
+        <div className="container mx-auto px-4 py-8 pt-20 max-w-6xl">
           <motion.div
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
@@ -238,7 +301,7 @@ export default function CreateMessage() {
                     {currentStepId === 'recipient' && (
                       <div className="space-y-4">
                         <div>
-                          <Label htmlFor="recipientName\" className="text-slate-300">Recipient Name</Label>
+                          <Label htmlFor="recipientName" className="text-slate-300">Recipient Name</Label>
                           <Input
                             id="recipientName"
                             placeholder="Who is this message for?"
@@ -304,7 +367,7 @@ export default function CreateMessage() {
 
                     {/* Content Step */}
                     {currentStepId === 'content' && (
-                      <div className="space-y-4">
+                      <div className="space-y-6">
                         <div>
                           <Label htmlFor="title" className="text-slate-300">Message Title</Label>
                           <Input
@@ -315,17 +378,110 @@ export default function CreateMessage() {
                             className="bg-slate-800 border-slate-700 text-white"
                           />
                         </div>
-                        <div>
-                          <Label htmlFor="content" className="text-slate-300">Your Message</Label>
-                          <Textarea
-                            id="content"
-                            placeholder="Write your heartfelt message here..."
-                            value={formData.content}
-                            onChange={(e) => handleInputChange('content', e.target.value)}
-                            className="bg-slate-800 border-slate-700 text-white min-h-32"
-                            rows={8}
-                          />
-                        </div>
+
+                        {/* Content based on format */}
+                        {formData.format === 'text' && (
+                          <Tabs defaultValue="write" className="w-full">
+                            <TabsList className="grid w-full grid-cols-2 bg-slate-800">
+                              <TabsTrigger value="write" className="text-slate-300">Write Message</TabsTrigger>
+                              <TabsTrigger value="template" className="text-slate-300">Use Template</TabsTrigger>
+                            </TabsList>
+                            <TabsContent value="write" className="space-y-4">
+                              <div>
+                                <Label htmlFor="content" className="text-slate-300">Your Message</Label>
+                                <Textarea
+                                  id="content"
+                                  placeholder="Write your heartfelt message here..."
+                                  value={formData.content}
+                                  onChange={(e) => handleInputChange('content', e.target.value)}
+                                  className="bg-slate-800 border-slate-700 text-white min-h-32"
+                                  rows={8}
+                                />
+                              </div>
+                            </TabsContent>
+                            <TabsContent value="template">
+                              <MessageTemplates onTemplateSelect={handleTemplateSelect} />
+                            </TabsContent>
+                          </Tabs>
+                        )}
+
+                        {(formData.format === 'audio' || formData.format === 'video') && (
+                          <div className="space-y-4">
+                            <MediaRecorder 
+                              messageId="temp"
+                              onRecordingComplete={handleRecordingComplete}
+                              maxDuration={600} // 10 minutes
+                            />
+                            <div>
+                              <Label htmlFor="content" className="text-slate-300">Additional Notes (Optional)</Label>
+                              <Textarea
+                                id="content"
+                                placeholder="Add any additional text to accompany your recording..."
+                                value={formData.content}
+                                onChange={(e) => handleInputChange('content', e.target.value)}
+                                className="bg-slate-800 border-slate-700 text-white"
+                                rows={4}
+                              />
+                            </div>
+                          </div>
+                        )}
+
+                        {formData.format === 'mixed' && (
+                          <Tabs defaultValue="text" className="w-full">
+                            <TabsList className="grid w-full grid-cols-4 bg-slate-800">
+                              <TabsTrigger value="text" className="text-slate-300">
+                                <FileText className="w-4 h-4 mr-1" />
+                                Text
+                              </TabsTrigger>
+                              <TabsTrigger value="template" className="text-slate-300">
+                                <MessageSquare className="w-4 h-4 mr-1" />
+                                Template
+                              </TabsTrigger>
+                              <TabsTrigger value="record" className="text-slate-300">
+                                <Mic className="w-4 h-4 mr-1" />
+                                Record
+                              </TabsTrigger>
+                              <TabsTrigger value="files" className="text-slate-300">
+                                <Upload className="w-4 h-4 mr-1" />
+                                Files
+                              </TabsTrigger>
+                            </TabsList>
+                            
+                            <TabsContent value="text" className="space-y-4">
+                              <div>
+                                <Label htmlFor="content" className="text-slate-300">Your Message</Label>
+                                <Textarea
+                                  id="content"
+                                  placeholder="Write your heartfelt message here..."
+                                  value={formData.content}
+                                  onChange={(e) => handleInputChange('content', e.target.value)}
+                                  className="bg-slate-800 border-slate-700 text-white min-h-32"
+                                  rows={8}
+                                />
+                              </div>
+                            </TabsContent>
+                            
+                            <TabsContent value="template">
+                              <MessageTemplates onTemplateSelect={handleTemplateSelect} />
+                            </TabsContent>
+                            
+                            <TabsContent value="record">
+                              <MediaRecorder 
+                                messageId="temp"
+                                onRecordingComplete={handleRecordingComplete}
+                                maxDuration={600}
+                              />
+                            </TabsContent>
+                            
+                            <TabsContent value="files">
+                              <FileUploader 
+                                messageId="temp"
+                                onFileUploaded={handleFileUploaded}
+                                maxFileSize={100 * 1024 * 1024} // 100MB
+                              />
+                            </TabsContent>
+                          </Tabs>
+                        )}
                       </div>
                     )}
 
@@ -396,7 +552,7 @@ export default function CreateMessage() {
                                 </div>
                                 <Button
                                   variant={formData.hasPin ? "default" : "outline"}
-                                  onClick={() => handleInputChange('hasPin', (!formData.hasPin).toString())}
+                                  onClick={() => handleInputChange('hasPin', !formData.hasPin)}
                                   className={formData.hasPin ? "bg-amber-500 text-slate-950" : ""}
                                 >
                                   {formData.hasPin ? 'Enabled' : 'Enable'}
@@ -428,9 +584,25 @@ export default function CreateMessage() {
                           <CardContent className="p-6">
                             <h4 className="text-xl font-semibold text-white mb-2">{formData.title}</h4>
                             <p className="text-slate-400 mb-4">For: {formData.recipientName} ({formData.relationship})</p>
-                            <div className="bg-slate-800 p-4 rounded-lg mb-4">
-                              <p className="text-white whitespace-pre-wrap">{formData.content}</p>
-                            </div>
+                            
+                            {formData.content && (
+                              <div className="bg-slate-800 p-4 rounded-lg mb-4">
+                                <p className="text-white whitespace-pre-wrap">{formData.content}</p>
+                              </div>
+                            )}
+                            
+                            {formData.recordingBlob && (
+                              <div className="bg-slate-800 p-4 rounded-lg mb-4">
+                                <p className="text-white">📹 {formData.contentType === 'video' ? 'Video' : 'Audio'} recording attached</p>
+                              </div>
+                            )}
+                            
+                            {formData.attachments.length > 0 && (
+                              <div className="bg-slate-800 p-4 rounded-lg mb-4">
+                                <p className="text-white">📎 {formData.attachments.length} file(s) attached</p>
+                              </div>
+                            )}
+                            
                             <div className="flex items-center gap-4 text-sm text-slate-400">
                               <span>Format: {formData.format}</span>
                               <span>Trigger: {formData.triggerType}</span>
