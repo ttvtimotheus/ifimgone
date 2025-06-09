@@ -77,7 +77,7 @@ export class MediaService {
       // For large files, we could implement chunked upload here
       const { error } = await supabase.storage
         .from('message-media')
-        .upload(filePath, file, {
+        .upload(filePath, file, {}, {
           onUploadProgress: (progress) => {
             const percentage = (progress.loaded / progress.total) * 100;
             onProgress?.(percentage);
