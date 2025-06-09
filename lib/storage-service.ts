@@ -126,17 +126,19 @@ export class StorageService {
         this.bucketsInitialized = true; // Force mark as initialized
       }
 
-      // Generate unique filename
+      // Generate unique filename with proper user folder structure
       const timestamp = Date.now();
       const extension = this.getFileExtension(blob.type, type);
       const fileName = `${type}_${messageId}_${timestamp}.${extension}`;
-      const filePath = `recordings/${userId}/${fileName}`;
+      // Use the user ID in the path for RLS policy compliance
+      const filePath = `${userId}/recordings/${fileName}`;
 
       console.log('📤 Uploading recording:', {
         fileName,
         filePath,
         size: blob.size,
-        type: blob.type
+        type: blob.type,
+        userId
       });
 
       // Upload to Supabase Storage with timeout
@@ -185,6 +187,8 @@ export class StorageService {
           errorMessage = 'Upload timed out. Please check your connection and try again.';
         } else if (error.message.includes('Bucket not found')) {
           errorMessage = 'Storage not properly configured. Please contact support.';
+        } else if (error.message.includes('row-level security')) {
+          errorMessage = 'Storage permission error. Please try logging out and back in.';
         } else {
           errorMessage = error.message;
         }
@@ -222,13 +226,15 @@ export class StorageService {
       const timestamp = Date.now();
       const sanitizedFileName = file.name.replace(/[^a-zA-Z0-9.-]/g, '_');
       const fileName = `${timestamp}_${sanitizedFileName}`;
-      const filePath = `attachments/${userId}/${messageId}/${fileName}`;
+      // Use the user ID in the path for RLS policy compliance
+      const filePath = `${userId}/attachments/${messageId}/${fileName}`;
 
       console.log('📤 Uploading attachment:', {
         fileName,
         filePath,
         size: file.size,
-        type: file.type
+        type: file.type,
+        userId
       });
 
       // Upload with timeout
@@ -277,6 +283,8 @@ export class StorageService {
           errorMessage = 'Upload timed out. Please check your connection and try again.';
         } else if (error.message.includes('Bucket not found')) {
           errorMessage = 'Storage not properly configured. Please contact support.';
+        } else if (error.message.includes('row-level security')) {
+          errorMessage = 'Storage permission error. Please try logging out and back in.';
         } else {
           errorMessage = error.message;
         }
@@ -313,13 +321,15 @@ export class StorageService {
       const timestamp = Date.now();
       const extension = file.name.split('.').pop() || 'jpg';
       const fileName = `avatar_${userId}_${timestamp}.${extension}`;
-      const filePath = `avatars/${fileName}`;
+      // Use the user ID in the path for RLS policy compliance
+      const filePath = `${userId}/${fileName}`;
 
       console.log('📤 Uploading avatar:', {
         fileName,
         filePath,
         size: file.size,
-        type: file.type
+        type: file.type,
+        userId
       });
 
       const { data, error } = await supabase.storage
@@ -398,7 +408,7 @@ export class StorageService {
   }
 
   // Get file extension based on MIME type
-  private getFileExtension(mimeType: string, fallbackType: string): string {
+  getFileExtension(mimeType: string, fallbackType: string): string {
     const mimeToExt: Record<string, string> = {
       'audio/webm': 'webm',
       'audio/mp4': 'm4a',
