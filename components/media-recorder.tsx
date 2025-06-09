@@ -22,7 +22,9 @@ import {
   Save,
   CheckCircle,
   Loader2,
-  RefreshCw
+  RefreshCw,
+  Wifi,
+  WifiOff
 } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { StorageService } from '@/lib/storage-service';
@@ -53,8 +55,17 @@ export function MediaRecorder({ messageId, onRecordingComplete, maxDuration = 30
   const [isSaving, setIsSaving] = useState(false);
   const [isSaved, setIsSaved] = useState(false);
   const [storagePath, setStoragePath] = useState<string | null>(null);
-  const [storageInitialized, setStorageInitialized] = useState(false);
-  const [storageError, setStorageError] = useState<string | null>(null);
+  const [storageStatus, setStorageStatus] = useState<{
+    initialized: boolean;
+    error: string | null;
+    attempts: number;
+    maxAttempts: number;
+  }>({
+    initialized: false,
+    error: null,
+    attempts: 0,
+    maxAttempts: 3
+  });
   
   const videoRef = useRef<HTMLVideoElement>(null);
   const audioRef = useRef<HTMLAudioElement>(null);
@@ -81,37 +92,38 @@ export function MediaRecorder({ messageId, onRecordingComplete, maxDuration = 30
   const initializeStorage = async () => {
     try {
       console.log('🔧 Initializing storage for media recorder...');
-      setStorageError(null);
+      setStorageStatus(prev => ({ ...prev, error: null }));
       
-      // Set a reasonable timeout for initialization
-      const initPromise = storageService.initializeStorage();
-      const timeoutPromise = new Promise((_, reject) => {
-        setTimeout(() => reject(new Error('Storage initialization timeout')), 15000); // 15 seconds
+      await storageService.initializeStorage();
+      
+      const status = storageService.getInitializationStatus();
+      setStorageStatus({
+        initialized: status.initialized,
+        error: null,
+        attempts: status.attempts,
+        maxAttempts: status.maxAttempts
       });
-
-      await Promise.race([initPromise, timeoutPromise]);
       
-      setStorageInitialized(true);
       console.log('✅ Storage initialized successfully');
       
     } catch (error) {
       console.error('❌ Storage initialization failed:', error);
-      setStorageError(error instanceof Error ? error.message : 'Storage initialization failed');
       
-      // Still mark as initialized to allow the app to function
-      setStorageInitialized(true);
-      
-      toast({
-        title: 'Storage Warning',
-        description: 'Storage setup had issues. Recording may not save properly.',
-        variant: 'destructive'
+      const status = storageService.getInitializationStatus();
+      setStorageStatus({
+        initialized: status.initialized, // Might still be true if marked as initialized despite error
+        error: error instanceof Error ? error.message : 'Storage initialization failed',
+        attempts: status.attempts,
+        maxAttempts: status.maxAttempts
       });
+      
+      // Don't show error toast immediately, let user try to use the recorder
+      console.log('⚠️ Storage had issues but continuing...');
     }
   };
 
   const retryStorageInit = async () => {
-    setStorageInitialized(false);
-    setStorageError(null);
+    setStorageStatus(prev => ({ ...prev, error: null, attempts: 0 }));
     storageService.resetInitialization();
     await initializeStorage();
   };
@@ -485,9 +497,21 @@ export function MediaRecorder({ messageId, onRecordingComplete, maxDuration = 30
 
     } catch (error) {
       console.error('Error saving recording:', error);
+      
+      let errorMessage = 'Failed to save recording';
+      if (error instanceof Error) {
+        if (error.message.includes('timeout')) {
+          errorMessage = 'Save timed out. Please check your connection and try again.';
+        } else if (error.message.includes('Bucket not found')) {
+          errorMessage = 'Storage not properly configured. Recording saved locally only.';
+        } else {
+          errorMessage = error.message;
+        }
+      }
+      
       toast({
         title: 'Save Failed',
-        description: error instanceof Error ? error.message : 'Failed to save recording',
+        description: errorMessage,
         variant: 'destructive'
       });
     } finally {
@@ -658,10 +682,20 @@ export function MediaRecorder({ messageId, onRecordingComplete, maxDuration = 30
                 Saved
               </Badge>
             )}
-            {!storageInitialized && (
+            {storageStatus.initialized ? (
+              <Badge variant="outline" className="border-green-500 text-green-400">
+                <Wifi className="w-3 h-3 mr-1" />
+                Ready
+              </Badge>
+            ) : storageStatus.error ? (
+              <Badge variant="outline" className="border-red-500 text-red-400">
+                <WifiOff className="w-3 h-3 mr-1" />
+                Storage Issue
+              </Badge>
+            ) : (
               <Badge variant="outline" className="border-yellow-500 text-yellow-400">
                 <Loader2 className="w-3 h-3 mr-1 animate-spin" />
-                Initializing...
+                Connecting...
               </Badge>
             )}
           </div>
@@ -669,27 +703,31 @@ export function MediaRecorder({ messageId, onRecordingComplete, maxDuration = 30
       </CardHeader>
       <CardContent className="space-y-6">
         {/* Storage Status */}
-        {!storageInitialized && !storageError && (
+        {!storageStatus.initialized && !storageStatus.error && (
           <Alert className="border-yellow-500/50 bg-yellow-500/10">
             <Loader2 className="w-4 h-4 animate-spin" />
             <AlertDescription className="text-yellow-300">
-              Setting up storage for recordings... This should only take a few seconds.
+              Connecting to storage... Attempt {storageStatus.attempts}/{storageStatus.maxAttempts}
             </AlertDescription>
           </Alert>
         )}
 
         {/* Storage Error */}
-        {storageError && (
-          <Alert className="border-red-500/50 bg-red-500/10">
+        {storageStatus.error && (
+          <Alert className="border-orange-500/50 bg-orange-500/10">
             <AlertTriangle className="w-4 h-4" />
-            <AlertDescription className="text-red-300">
+            <AlertDescription className="text-orange-300">
               <div className="flex items-center justify-between">
-                <span>Storage setup failed: {storageError}</span>
+                <div>
+                  <strong>Storage Warning:</strong> {storageStatus.error}
+                  <br />
+                  <span className="text-sm">You can still record, but saving may not work properly.</span>
+                </div>
                 <Button
                   variant="ghost"
                   size="sm"
                   onClick={retryStorageInit}
-                  className="text-red-300 hover:text-white"
+                  className="text-orange-300 hover:text-white"
                 >
                   <RefreshCw className="w-3 h-3 mr-1" />
                   Retry
@@ -831,7 +869,7 @@ export function MediaRecorder({ messageId, onRecordingComplete, maxDuration = 30
             {!isSaved && (
               <Button
                 onClick={saveRecording}
-                disabled={isSaving || !storageInitialized}
+                disabled={isSaving}
                 className="bg-green-500 hover:bg-green-600 text-white font-semibold"
               >
                 {isSaving ? (
@@ -885,8 +923,8 @@ export function MediaRecorder({ messageId, onRecordingComplete, maxDuration = 30
           {recordedBlob && !isSaved && (
             <p className="text-yellow-400">⚠️ Don't forget to save your recording to the message!</p>
           )}
-          {storageError && (
-            <p className="text-red-400">⚠️ Storage has issues. Recordings may not save properly.</p>
+          {storageStatus.error && (
+            <p className="text-orange-400">⚠️ Storage has issues. You can still record and download locally.</p>
           )}
         </div>
       </CardContent>

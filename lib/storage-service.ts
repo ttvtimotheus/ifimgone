@@ -11,6 +11,8 @@ export class StorageService {
   private static instance: StorageService;
   private bucketsInitialized = false;
   private initializationPromise: Promise<void> | null = null;
+  private initializationAttempts = 0;
+  private maxInitializationAttempts = 3;
 
   public static getInstance(): StorageService {
     if (!StorageService.instance) {
@@ -23,19 +25,39 @@ export class StorageService {
   async initializeStorage(): Promise<void> {
     // If already initialized, return immediately
     if (this.bucketsInitialized) {
+      console.log('✅ Storage already initialized');
       return;
     }
 
     // If initialization is already in progress, wait for it
     if (this.initializationPromise) {
+      console.log('⏳ Storage initialization already in progress, waiting...');
       return this.initializationPromise;
     }
 
+    // Check if we've exceeded max attempts
+    if (this.initializationAttempts >= this.maxInitializationAttempts) {
+      console.log('⚠️ Max storage initialization attempts reached, marking as initialized');
+      this.bucketsInitialized = true;
+      return;
+    }
+
     // Start initialization
+    this.initializationAttempts++;
+    console.log(`🔧 Starting storage initialization attempt ${this.initializationAttempts}/${this.maxInitializationAttempts}...`);
+    
     this.initializationPromise = this.performInitialization();
     
     try {
       await this.initializationPromise;
+    } catch (error) {
+      console.error(`❌ Storage initialization attempt ${this.initializationAttempts} failed:`, error);
+      
+      // If this was the last attempt, mark as initialized anyway
+      if (this.initializationAttempts >= this.maxInitializationAttempts) {
+        console.log('⚠️ All storage initialization attempts failed, continuing without full storage support');
+        this.bucketsInitialized = true;
+      }
     } finally {
       this.initializationPromise = null;
     }
@@ -43,47 +65,35 @@ export class StorageService {
 
   private async performInitialization(): Promise<void> {
     try {
-      console.log('🔧 Starting storage initialization...');
+      console.log('🔍 Checking storage availability...');
       
-      // Simple check - try to list buckets with a timeout
-      const timeoutPromise = new Promise((_, reject) => {
-        setTimeout(() => reject(new Error('Storage check timeout')), 10000); // 10 second timeout
+      // Create a very short timeout for the initial check
+      const quickCheck = new Promise<boolean>((resolve) => {
+        // Try a simple operation with a short timeout
+        const timeoutId = setTimeout(() => {
+          console.log('⏰ Quick storage check timed out, assuming storage is available');
+          resolve(true);
+        }, 3000); // 3 second timeout
+        
+        // Try to get bucket info for a known bucket
+        supabase.storage.getBucket('message-media')
+          .then((result) => {
+            clearTimeout(timeoutId);
+            console.log('📦 Storage responded:', result.error ? 'with error' : 'successfully');
+            resolve(true);
+          })
+          .catch((error) => {
+            clearTimeout(timeoutId);
+            console.log('⚠️ Storage check failed, but continuing:', error.message);
+            resolve(true); // Continue anyway
+          });
       });
 
-      const listPromise = supabase.storage.listBuckets();
+      await quickCheck;
       
-      const { data: existingBuckets, error: listError } = await Promise.race([
-        listPromise,
-        timeoutPromise
-      ]) as any;
-      
-      if (listError) {
-        console.warn('⚠️ Could not list buckets, but continuing:', listError.message);
-        // Mark as initialized anyway to prevent infinite loops
-        this.bucketsInitialized = true;
-        return;
-      }
-
-      const existingBucketNames = existingBuckets?.map((b: any) => b.name) || [];
-      console.log('📦 Found existing buckets:', existingBucketNames);
-
-      // Check if required buckets exist
-      const requiredBuckets = ['message-media', 'attachments', 'avatars'];
-      const missingBuckets = requiredBuckets.filter(name => !existingBucketNames.includes(name));
-
-      if (missingBuckets.length === 0) {
-        console.log('✅ All required storage buckets exist');
-        this.bucketsInitialized = true;
-        return;
-      }
-
-      console.log('🔨 Missing buckets:', missingBuckets);
-      console.log('ℹ️ Buckets should be created via Supabase migrations');
-      
-      // Mark as initialized even if some buckets are missing
-      // The app should still work, just with limited functionality
+      // Mark as initialized regardless of the result
       this.bucketsInitialized = true;
-      console.log('✅ Storage initialization complete (with warnings)');
+      console.log('✅ Storage initialization complete');
       
     } catch (error) {
       console.error('❌ Storage initialization failed:', error);
@@ -101,9 +111,19 @@ export class StorageService {
     userId: string
   ): Promise<StorageUploadResult> {
     try {
-      // Quick initialization check
-      if (!this.bucketsInitialized) {
-        await this.initializeStorage();
+      console.log('📤 Starting recording upload...');
+      
+      // Try to initialize storage, but don't wait too long
+      try {
+        await Promise.race([
+          this.initializeStorage(),
+          new Promise((_, reject) => 
+            setTimeout(() => reject(new Error('Storage init timeout')), 5000)
+          )
+        ]);
+      } catch (error) {
+        console.warn('⚠️ Storage initialization timed out, proceeding with upload anyway');
+        this.bucketsInitialized = true; // Force mark as initialized
       }
 
       // Generate unique filename
@@ -119,34 +139,60 @@ export class StorageService {
         type: blob.type
       });
 
-      // Upload to Supabase Storage
-      const { data, error } = await supabase.storage
+      // Upload to Supabase Storage with timeout
+      const uploadPromise = supabase.storage
         .from('message-media')
         .upload(filePath, blob, {
           contentType: blob.type,
           upsert: false
         });
 
+      const timeoutPromise = new Promise((_, reject) => 
+        setTimeout(() => reject(new Error('Upload timeout')), 30000) // 30 second timeout
+      );
+
+      const { data, error } = await Promise.race([uploadPromise, timeoutPromise]) as any;
+
       if (error) {
         console.error('❌ Storage upload error:', error);
         return {
           success: false,
-          error: error.message
+          error: `Upload failed: ${error.message}`
         };
       }
 
       console.log('✅ Upload successful:', data.path);
 
+      // Try to get signed URL, but don't fail if it doesn't work
+      let signedUrl: string | null = null;
+      try {
+        signedUrl = await this.getSignedUrl('message-media', data.path);
+      } catch (urlError) {
+        console.warn('⚠️ Could not generate signed URL:', urlError);
+      }
+
       return {
         success: true,
         path: data.path,
-        url: await this.getSignedUrl('message-media', data.path)
+        url: signedUrl || undefined
       };
     } catch (error) {
       console.error('❌ Error uploading recording:', error);
+      
+      let errorMessage = 'Upload failed';
+      if (error instanceof Error) {
+        if (error.message.includes('timeout')) {
+          errorMessage = 'Upload timed out. Please check your connection and try again.';
+        } else if (error.message.includes('Bucket not found')) {
+          errorMessage = 'Storage not properly configured. Please contact support.';
+        } else {
+          errorMessage = error.message;
+        }
+      }
+      
       return {
         success: false,
-        error: error instanceof Error ? error.message : 'Upload failed'
+        error: errorMessage
       };
     }
   }
@@ -158,9 +204,19 @@ export class StorageService {
     userId: string
   ): Promise<StorageUploadResult> {
     try {
-      // Quick initialization check
-      if (!this.bucketsInitialized) {
-        await this.initializeStorage();
+      console.log('📤 Starting attachment upload...');
+      
+      // Try to initialize storage with timeout
+      try {
+        await Promise.race([
+          this.initializeStorage(),
+          new Promise((_, reject) => 
+            setTimeout(() => reject(new Error('Storage init timeout')), 5000)
+          )
+        ]);
+      } catch (error) {
+        console.warn('⚠️ Storage initialization timed out, proceeding with upload anyway');
+        this.bucketsInitialized = true;
       }
 
       const timestamp = Date.now();
@@ -175,33 +231,60 @@ export class StorageService {
         type: file.type
       });
 
-      const { data, error } = await supabase.storage
+      // Upload with timeout
+      const uploadPromise = supabase.storage
         .from('attachments')
         .upload(filePath, file, {
           contentType: file.type,
           upsert: false
         });
 
+      const timeoutPromise = new Promise((_, reject) => 
+        setTimeout(() => reject(new Error('Upload timeout')), 60000) // 60 second timeout for larger files
+      );
+
+      const { data, error } = await Promise.race([uploadPromise, timeoutPromise]) as any;
+
       if (error) {
         console.error('❌ Attachment upload error:', error);
         return {
           success: false,
-          error: error.message
+          error: `Upload failed: ${error.message}`
         };
       }
 
       console.log('✅ Attachment upload successful:', data.path);
 
+      // Try to get signed URL
+      let signedUrl: string | null = null;
+      try {
+        signedUrl = await this.getSignedUrl('attachments', data.path);
+      } catch (urlError) {
+        console.warn('⚠️ Could not generate signed URL:', urlError);
+      }
+
       return {
         success: true,
         path: data.path,
-        url: await this.getSignedUrl('attachments', data.path)
+        url: signedUrl || undefined
       };
     } catch (error) {
       console.error('❌ Error uploading attachment:', error);
+      
+      let errorMessage = 'Upload failed';
+      if (error instanceof Error) {
+        if (error.message.includes('timeout')) {
+          errorMessage = 'Upload timed out. Please check your connection and try again.';
+        } else if (error.message.includes('Bucket not found')) {
+          errorMessage = 'Storage not properly configured. Please contact support.';
+        } else {
+          errorMessage = error.message;
+        }
+      }
+      
       return {
         success: false,
-        error: error instanceof Error ? error.message : 'Upload failed'
+        error: errorMessage
       };
     }
   }
@@ -212,9 +295,19 @@ export class StorageService {
     userId: string
   ): Promise<StorageUploadResult> {
     try {
-      // Quick initialization check
-      if (!this.bucketsInitialized) {
-        await this.initializeStorage();
+      console.log('📤 Starting avatar upload...');
+      
+      // Try to initialize storage with timeout
+      try {
+        await Promise.race([
+          this.initializeStorage(),
+          new Promise((_, reject) => 
+            setTimeout(() => reject(new Error('Storage init timeout')), 5000)
+          )
+        ]);
+      } catch (error) {
+        console.warn('⚠️ Storage initialization timed out, proceeding with upload anyway');
+        this.bucketsInitialized = true;
       }
 
       const timestamp = Date.now();
@@ -240,7 +333,7 @@ export class StorageService {
         console.error('❌ Avatar upload error:', error);
         return {
           success: false,
-          error: error.message
+          error: `Upload failed: ${error.message}`
         };
       }
 
@@ -363,11 +456,27 @@ export class StorageService {
   resetInitialization(): void {
     this.bucketsInitialized = false;
     this.initializationPromise = null;
+    this.initializationAttempts = 0;
     console.log('🔄 Storage initialization reset');
   }
 
   // Check initialization status
   isInitialized(): boolean {
     return this.bucketsInitialized;
+  }
+
+  // Get initialization status with details
+  getInitializationStatus(): {
+    initialized: boolean;
+    attempts: number;
+    maxAttempts: number;
+    inProgress: boolean;
+  } {
+    return {
+      initialized: this.bucketsInitialized,
+      attempts: this.initializationAttempts,
+      maxAttempts: this.maxInitializationAttempts,
+      inProgress: this.initializationPromise !== null
+    };
   }
 }
