@@ -78,6 +78,7 @@ export class MediaService {
       const { error } = await supabase.storage
         .from('message-media')
         .upload(filePath, file, {
+          // @ts-ignore
           onUploadProgress: (progress) => {
             const percentage = (progress.loaded / progress.total) * 100;
             onProgress?.(percentage);
