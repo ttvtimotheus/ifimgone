@@ -16,7 +16,8 @@ import {
   Download,
   Volume2,
   VolumeX,
-  Settings
+  Settings,
+  AlertTriangle
 } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 
@@ -36,6 +37,11 @@ export function MediaRecorder({ messageId, onRecordingComplete, maxDuration = 30
   const [stream, setStream] = useState<MediaStream | null>(null);
   const [mediaRecorder, setMediaRecorder] = useState<MediaRecorder | null>(null);
   const [recordedChunks, setRecordedChunks] = useState<Blob[]>([]);
+  const [supportedMimeTypes, setSupportedMimeTypes] = useState<string[]>([]);
+  const [hasPermissions, setHasPermissions] = useState<{audio: boolean, video: boolean}>({
+    audio: false,
+    video: false
+  });
   
   const videoRef = useRef<HTMLVideoElement>(null);
   const audioRef = useRef<HTMLAudioElement>(null);
@@ -43,6 +49,9 @@ export function MediaRecorder({ messageId, onRecordingComplete, maxDuration = 30
   const { toast } = useToast();
 
   useEffect(() => {
+    checkBrowserSupport();
+    checkPermissions();
+    
     return () => {
       if (intervalRef.current) {
         clearInterval(intervalRef.current);
@@ -51,7 +60,91 @@ export function MediaRecorder({ messageId, onRecordingComplete, maxDuration = 30
         stream.getTracks().forEach(track => track.stop());
       }
     };
-  }, [stream]);
+  }, []);
+
+  const checkBrowserSupport = () => {
+    const types = [
+      'audio/webm;codecs=opus',
+      'audio/webm',
+      'audio/mp4',
+      'audio/ogg;codecs=opus',
+      'video/webm;codecs=vp9,opus',
+      'video/webm;codecs=vp8,opus',
+      'video/webm',
+      'video/mp4',
+      'video/ogg'
+    ];
+
+    const supported = types.filter(type => {
+      try {
+        return typeof MediaRecorder !== 'undefined' && 
+               typeof MediaRecorder.isTypeSupported === 'function' && 
+               MediaRecorder.isTypeSupported(type);
+      } catch (error) {
+        console.warn('Error checking MIME type support:', type, error);
+        return false;
+      }
+    });
+
+    setSupportedMimeTypes(supported);
+    console.log('Supported MIME types:', supported);
+  };
+
+  const checkPermissions = async () => {
+    try {
+      // Check audio permission
+      try {
+        const audioStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        setHasPermissions(prev => ({ ...prev, audio: true }));
+        audioStream.getTracks().forEach(track => track.stop());
+      } catch (error) {
+        console.log('Audio permission not granted or not available');
+      }
+
+      // Check video permission
+      try {
+        const videoStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
+        setHasPermissions(prev => ({ ...prev, video: true }));
+        videoStream.getTracks().forEach(track => track.stop());
+      } catch (error) {
+        console.log('Video permission not granted or not available');
+      }
+    } catch (error) {
+      console.error('Error checking permissions:', error);
+    }
+  };
+
+  const getBestMimeType = (type: 'audio' | 'video'): string => {
+    if (type === 'audio') {
+      const audioTypes = [
+        'audio/webm;codecs=opus',
+        'audio/webm',
+        'audio/mp4',
+        'audio/ogg;codecs=opus'
+      ];
+      
+      for (const mimeType of audioTypes) {
+        if (supportedMimeTypes.includes(mimeType)) {
+          return mimeType;
+        }
+      }
+      return 'audio/webm'; // Fallback
+    } else {
+      const videoTypes = [
+        'video/webm;codecs=vp9,opus',
+        'video/webm;codecs=vp8,opus',
+        'video/webm',
+        'video/mp4'
+      ];
+      
+      for (const mimeType of videoTypes) {
+        if (supportedMimeTypes.includes(mimeType)) {
+          return mimeType;
+        }
+      }
+      return 'video/webm'; // Fallback
+    }
+  };
 
   const startRecording = async (type: 'audio' | 'video') => {
     try {
@@ -73,47 +166,59 @@ export function MediaRecorder({ messageId, onRecordingComplete, maxDuration = 30
       } else {
         mediaStream = await navigator.mediaDevices.getUserMedia({ 
           video: {
-            width: { ideal: 1280 },
-            height: { ideal: 720 },
-            frameRate: { ideal: 30 }
+            width: { ideal: 1280, max: 1920 },
+            height: { ideal: 720, max: 1080 },
+            frameRate: { ideal: 30, max: 60 }
           },
           audio: {
             echoCancellation: true,
-            noiseSuppression: true
+            noiseSuppression: true,
+            sampleRate: 44100
           }
         });
 
         // Show video preview
         if (videoRef.current) {
           videoRef.current.srcObject = mediaStream;
-          videoRef.current.play();
+          videoRef.current.muted = true; // Prevent feedback
+          try {
+            await videoRef.current.play();
+          } catch (playError) {
+            console.warn('Could not start video preview:', playError);
+          }
         }
       }
 
       setStream(mediaStream);
 
-      // Create MediaRecorder
-      const mimeType = type === 'audio' 
-        ? 'audio/webm;codecs=opus' 
-        : 'video/webm;codecs=vp9,opus';
-      
-      const recorder = new MediaRecorder(mediaStream, {
-        mimeType: MediaRecorder.isTypeSupported(mimeType) ? mimeType : undefined
-      });
+      // Get the best supported MIME type
+      const mimeType = getBestMimeType(type);
+      console.log('Using MIME type:', mimeType);
+
+      // Create MediaRecorder with fallback options
+      let recorder: MediaRecorder;
+      try {
+        recorder = new MediaRecorder(mediaStream, { mimeType });
+      } catch (error) {
+        console.warn('Failed to create MediaRecorder with MIME type, using default:', error);
+        recorder = new MediaRecorder(mediaStream);
+      }
 
       const chunks: Blob[] = [];
 
       recorder.ondataavailable = (event) => {
-        if (event.data.size > 0) {
+        if (event.data && event.data.size > 0) {
           chunks.push(event.data);
           setRecordedChunks(prev => [...prev, event.data]);
         }
       };
 
       recorder.onstop = () => {
-        const blob = new Blob(chunks, {
-          type: recorder.mimeType || (type === 'audio' ? 'audio/webm' : 'video/webm')
-        });
+        const finalMimeType = recorder.mimeType || (type === 'audio' ? 'audio/webm' : 'video/webm');
+        const blob = new Blob(chunks, { type: finalMimeType });
+        
+        console.log('Recording stopped. Blob size:', blob.size, 'MIME type:', finalMimeType);
+        
         setRecordedBlob(blob);
         onRecordingComplete?.(blob, type);
         
@@ -127,35 +232,55 @@ export function MediaRecorder({ messageId, onRecordingComplete, maxDuration = 30
         setStream(null);
       };
 
-      setMediaRecorder(recorder);
-      recorder.start(1000); // Collect data every second
-      setIsRecording(true);
-
-      // Start duration timer
-      intervalRef.current = setInterval(() => {
-        setDuration(prev => {
-          const newDuration = prev + 1;
-          if (newDuration >= maxDuration) {
-            stopRecording();
-          }
-          return newDuration;
+      recorder.onerror = (event) => {
+        console.error('MediaRecorder error:', event);
+        toast({
+          title: 'Recording Error',
+          description: 'An error occurred during recording',
+          variant: 'destructive'
         });
-      }, 1000);
+      };
 
-      toast({
-        title: 'Recording Started',
-        description: `${type === 'audio' ? 'Audio' : 'Video'} recording has begun`,
-        variant: 'default'
-      });
+      setMediaRecorder(recorder);
+      
+      try {
+        recorder.start(1000); // Collect data every second
+        setIsRecording(true);
+
+        // Start duration timer
+        intervalRef.current = setInterval(() => {
+          setDuration(prev => {
+            const newDuration = prev + 1;
+            if (newDuration >= maxDuration) {
+              stopRecording();
+            }
+            return newDuration;
+          });
+        }, 1000);
+
+        toast({
+          title: 'Recording Started',
+          description: `${type === 'audio' ? 'Audio' : 'Video'} recording has begun`,
+          variant: 'default'
+        });
+      } catch (startError) {
+        console.error('Error starting recording:', startError);
+        throw startError;
+      }
+
     } catch (error) {
       console.error('Error starting recording:', error);
       
       let errorMessage = 'Failed to start recording. ';
       if (error instanceof Error) {
         if (error.name === 'NotAllowedError') {
-          errorMessage += 'Please allow microphone and camera access.';
+          errorMessage += 'Please allow microphone and camera access in your browser settings.';
         } else if (error.name === 'NotFoundError') {
-          errorMessage += 'No microphone or camera found.';
+          errorMessage += 'No microphone or camera found. Please check your devices.';
+        } else if (error.name === 'NotSupportedError') {
+          errorMessage += 'Recording is not supported in this browser.';
+        } else if (error.name === 'NotReadableError') {
+          errorMessage += 'Your microphone or camera is already in use by another application.';
         } else {
           errorMessage += error.message;
         }
@@ -166,6 +291,14 @@ export function MediaRecorder({ messageId, onRecordingComplete, maxDuration = 30
         description: errorMessage,
         variant: 'destructive'
       });
+
+      // Cleanup on error
+      setIsRecording(false);
+      setRecordingType(null);
+      if (stream) {
+        stream.getTracks().forEach(track => track.stop());
+        setStream(null);
+      }
     }
   };
 
@@ -179,7 +312,14 @@ export function MediaRecorder({ messageId, onRecordingComplete, maxDuration = 30
       intervalRef.current = null;
     }
 
-    mediaRecorder.stop();
+    try {
+      if (mediaRecorder.state === 'recording') {
+        mediaRecorder.stop();
+      }
+    } catch (error) {
+      console.error('Error stopping recording:', error);
+    }
+    
     setMediaRecorder(null);
 
     toast({
@@ -197,7 +337,14 @@ export function MediaRecorder({ messageId, onRecordingComplete, maxDuration = 30
     if (recordingType === 'audio') {
       if (audioRef.current) {
         audioRef.current.src = url;
-        audioRef.current.play();
+        audioRef.current.play().catch(error => {
+          console.error('Error playing audio:', error);
+          toast({
+            title: 'Playback Error',
+            description: 'Could not play the audio recording',
+            variant: 'destructive'
+          });
+        });
         setIsPlaying(true);
         
         audioRef.current.onended = () => {
@@ -208,7 +355,15 @@ export function MediaRecorder({ messageId, onRecordingComplete, maxDuration = 30
     } else {
       if (videoRef.current) {
         videoRef.current.src = url;
-        videoRef.current.play();
+        videoRef.current.muted = false; // Allow sound for playback
+        videoRef.current.play().catch(error => {
+          console.error('Error playing video:', error);
+          toast({
+            title: 'Playback Error',
+            description: 'Could not play the video recording',
+            variant: 'destructive'
+          });
+        });
         setIsPlaying(true);
         
         videoRef.current.onended = () => {
@@ -234,11 +389,24 @@ export function MediaRecorder({ messageId, onRecordingComplete, maxDuration = 30
     const url = URL.createObjectURL(recordedBlob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `recording_${Date.now()}.${recordingType === 'audio' ? 'webm' : 'webm'}`;
+    
+    // Determine file extension based on MIME type
+    const mimeType = recordedBlob.type;
+    let extension = 'webm';
+    if (mimeType.includes('mp4')) extension = 'mp4';
+    else if (mimeType.includes('ogg')) extension = 'ogg';
+    
+    a.download = `recording_${Date.now()}.${extension}`;
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
     URL.revokeObjectURL(url);
+
+    toast({
+      title: 'Download Started',
+      description: 'Your recording is being downloaded',
+      variant: 'default'
+    });
   };
 
   const deleteRecording = () => {
@@ -250,6 +418,12 @@ export function MediaRecorder({ messageId, onRecordingComplete, maxDuration = 30
     
     if (audioRef.current) audioRef.current.src = '';
     if (videoRef.current) videoRef.current.src = '';
+
+    toast({
+      title: 'Recording Deleted',
+      description: 'The recording has been removed',
+      variant: 'default'
+    });
   };
 
   const formatDuration = (seconds: number) => {
@@ -259,6 +433,23 @@ export function MediaRecorder({ messageId, onRecordingComplete, maxDuration = 30
   };
 
   const progressPercentage = (duration / maxDuration) * 100;
+
+  // Check if MediaRecorder is supported
+  const isMediaRecorderSupported = typeof MediaRecorder !== 'undefined';
+
+  if (!isMediaRecorderSupported) {
+    return (
+      <Card className="border-slate-800 bg-slate-900/50">
+        <CardContent className="p-8 text-center">
+          <AlertTriangle className="w-12 h-12 text-yellow-500 mx-auto mb-4" />
+          <h3 className="text-lg font-semibold text-white mb-2">Recording Not Supported</h3>
+          <p className="text-slate-400">
+            Your browser doesn't support media recording. Please use a modern browser like Chrome, Firefox, or Safari.
+          </p>
+        </CardContent>
+      </Card>
+    );
+  }
 
   return (
     <Card className="border-slate-800 bg-slate-900/50">
@@ -271,19 +462,33 @@ export function MediaRecorder({ messageId, onRecordingComplete, maxDuration = 30
         </CardTitle>
       </CardHeader>
       <CardContent className="space-y-6">
+        {/* Browser Support Info */}
+        {supportedMimeTypes.length === 0 && (
+          <div className="bg-yellow-500/10 border border-yellow-500/20 rounded-lg p-4">
+            <div className="flex items-center space-x-2">
+              <AlertTriangle className="w-4 h-4 text-yellow-500" />
+              <p className="text-yellow-300 text-sm">
+                Limited recording support detected. Some features may not work properly.
+              </p>
+            </div>
+          </div>
+        )}
+
         {/* Recording Controls */}
         {!isRecording && !recordedBlob && (
           <div className="flex gap-4 justify-center">
             <Button
               onClick={() => startRecording('audio')}
-              className="bg-blue-500 hover:bg-blue-600 text-white font-semibold"
+              disabled={!hasPermissions.audio && supportedMimeTypes.length === 0}
+              className="bg-blue-500 hover:bg-blue-600 text-white font-semibold disabled:opacity-50"
             >
               <Mic className="w-4 h-4 mr-2" />
               Record Audio
             </Button>
             <Button
               onClick={() => startRecording('video')}
-              className="bg-purple-500 hover:bg-purple-600 text-white font-semibold"
+              disabled={!hasPermissions.video && supportedMimeTypes.length === 0}
+              className="bg-purple-500 hover:bg-purple-600 text-white font-semibold disabled:opacity-50"
             >
               <Video className="w-4 h-4 mr-2" />
               Record Video
@@ -326,6 +531,7 @@ export function MediaRecorder({ messageId, onRecordingComplete, maxDuration = 30
               muted={isMuted || isRecording}
               controls={!isRecording && recordedBlob}
               playsInline
+              autoPlay={isRecording}
             />
             {isRecording && (
               <div className="absolute top-4 right-4">
@@ -412,7 +618,9 @@ export function MediaRecorder({ messageId, onRecordingComplete, maxDuration = 30
         {/* Recording Info */}
         <div className="text-xs text-slate-500 text-center space-y-1">
           <p>Maximum recording duration: {formatDuration(maxDuration)}</p>
-          <p>Supported formats: WebM (Audio/Video)</p>
+          {supportedMimeTypes.length > 0 && (
+            <p>Supported formats: {supportedMimeTypes.slice(0, 2).join(', ')}</p>
+          )}
           <p>Make sure to allow microphone and camera permissions when prompted</p>
         </div>
       </CardContent>
