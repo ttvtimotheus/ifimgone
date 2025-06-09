@@ -301,7 +301,7 @@ export default function CreateMessage() {
                     {currentStepId === 'recipient' && (
                       <div className="space-y-4">
                         <div>
-                          <Label htmlFor="recipientName" className="text-slate-300">Recipient Name</Label>
+                          <Label htmlFor="recipientName\" className="text-slate-300">Recipient Name</Label>
                           <Input
                             id="recipientName"
                             placeholder="Who is this message for?"
