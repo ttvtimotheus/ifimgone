@@ -5,6 +5,8 @@ export interface EmailTemplate {
   subject: string;
   html: string;
   text?: string;
+  from?: string;
+  replyTo?: string;
 }
 
 export class EmailService {
@@ -17,9 +19,9 @@ export class EmailService {
     return EmailService.instance;
   }
 
-  async sendMessage(messageId: string, recipientEmail: string): Promise<boolean> {
+  async sendMessage(messageId: string, recipientEmail: string, recipientName: string): Promise<boolean> {
     try {
-      // Fetch message details
+      // Fetch message details with sender info
       const { data: message, error: messageError } = await supabase
         .from('messages')
         .select(`
@@ -37,20 +39,22 @@ export class EmailService {
       // Create a secure link for viewing the message
       const messageLink = `${process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'}/message/${messageId}`;
 
-      const emailTemplate: EmailTemplate = {
-        to: recipientEmail,
-        subject: `A message from ${message.profiles?.full_name || 'someone special'}`,
-        html: this.generateMessageEmailHTML(message, messageLink),
-        text: this.generateMessageEmailText(message, messageLink)
-      };
-
       // Send email using Supabase Edge Function
-      const { data, error } = await supabase.functions.invoke('send-email', {
-        body: emailTemplate
+      const { data, error } = await supabase.functions.invoke('send-message-delivery', {
+        body: {
+          to: recipientEmail,
+          recipientName: recipientName,
+          senderName: message.profiles?.full_name || 'Someone special',
+          messageTitle: message.title,
+          messageLink: messageLink,
+          messageId: messageId,
+          hasPin: !!message.pin_hash,
+          deliveryReason: message.trigger_type === 'inactivity' ? 'inactivity detected' : 'scheduled delivery'
+        }
       });
 
       if (error) {
-        console.error('Error sending email:', error);
+        console.error('Error sending message delivery email:', error);
         return false;
       }
 
@@ -72,10 +76,13 @@ export class EmailService {
           details: {
             message_id: messageId,
             recipient_email: recipientEmail,
-            delivery_method: 'email'
+            recipient_name: recipientName,
+            delivery_method: 'email',
+            email_id: data?.id
           }
         });
 
+      console.log('✅ Message delivered successfully:', { messageId, recipientEmail, emailId: data?.id });
       return true;
     } catch (error) {
       console.error('Error in sendMessage:', error);
@@ -83,83 +90,18 @@ export class EmailService {
     }
   }
 
-  private generateMessageEmailHTML(message: any, messageLink: string): string {
-    return `
-      <!DOCTYPE html>
-      <html>
-        <head>
-          <meta charset="utf-8">
-          <meta name="viewport" content="width=device-width, initial-scale=1.0">
-          <title>A Message for You</title>
-          <style>
-            body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; }
-            .container { max-width: 600px; margin: 0 auto; padding: 20px; }
-            .header { background: linear-gradient(135deg, #f59e0b, #dc2626); color: white; padding: 30px; text-align: center; border-radius: 8px 8px 0 0; }
-            .content { background: #f8fafc; padding: 30px; border-radius: 0 0 8px 8px; }
-            .button { display: inline-block; background: #f59e0b; color: white; padding: 12px 24px; text-decoration: none; border-radius: 6px; margin: 20px 0; }
-            .footer { text-align: center; margin-top: 30px; color: #666; font-size: 14px; }
-            .heart { color: #dc2626; }
-          </style>
-        </head>
-        <body>
-          <div class="container">
-            <div class="header">
-              <h1><span class="heart">♥</span> A Special Message for You</h1>
-              <p>From: ${message.profiles?.full_name || 'Someone who cares about you'}</p>
-            </div>
-            <div class="content">
-              <h2>${message.title}</h2>
-              <p>You have received a heartfelt message that was carefully prepared for you.</p>
-              <p>This message was created with love and is now ready for you to read.</p>
-              
-              <div style="text-align: center;">
-                <a href="${messageLink}" class="button">Read Your Message</a>
-              </div>
-              
-              <p><strong>Note:</strong> This message may require a PIN to unlock. If you don't have the PIN, please contact the sender's trusted contacts.</p>
-            </div>
-            <div class="footer">
-              <p>This message was delivered by <strong>If I'm Gone</strong></p>
-              <p>A digital legacy platform for preserving important messages</p>
-            </div>
-          </div>
-        </body>
-      </html>
-    `;
-  }
-
-  private generateMessageEmailText(message: any, messageLink: string): string {
-    return `
-A Special Message for You
-
-From: ${message.profiles?.full_name || 'Someone who cares about you'}
-
-${message.title}
-
-You have received a heartfelt message that was carefully prepared for you.
-This message was created with love and is now ready for you to read.
-
-To read your message, visit: ${messageLink}
-
-Note: This message may require a PIN to unlock. If you don't have the PIN, please contact the sender's trusted contacts.
-
-This message was delivered by If I'm Gone - A digital legacy platform for preserving important messages.
-    `;
-  }
-
-  async sendInactivityWarning(userId: string, userEmail: string, daysInactive: number): Promise<boolean> {
+  async sendInactivityWarning(userId: string, userEmail: string, userName: string, daysInactive: number, thresholdDays: number = 30): Promise<boolean> {
     try {
-      const warningLink = `${process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'}/dashboard`;
+      const dashboardLink = `${process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'}/dashboard`;
 
-      const emailTemplate: EmailTemplate = {
-        to: userEmail,
-        subject: 'Activity Check - If I\'m Gone',
-        html: this.generateInactivityWarningHTML(daysInactive, warningLink),
-        text: this.generateInactivityWarningText(daysInactive, warningLink)
-      };
-
-      const { error } = await supabase.functions.invoke('send-email', {
-        body: emailTemplate
+      const { data, error } = await supabase.functions.invoke('send-inactivity-warning', {
+        body: {
+          to: userEmail,
+          userName: userName,
+          daysInactive: daysInactive,
+          dashboardLink: dashboardLink,
+          thresholdDays: thresholdDays
+        }
       });
 
       if (error) {
@@ -167,6 +109,20 @@ This message was delivered by If I'm Gone - A digital legacy platform for preser
         return false;
       }
 
+      // Log the warning
+      await supabase
+        .from('activity_logs')
+        .insert({
+          user_id: userId,
+          action: 'inactivity_warning_sent',
+          details: {
+            days_inactive: daysInactive,
+            threshold_days: thresholdDays,
+            email_id: data?.id
+          }
+        });
+
+      console.log('✅ Inactivity warning sent successfully:', { userId, daysInactive, emailId: data?.id });
       return true;
     } catch (error) {
       console.error('Error in sendInactivityWarning:', error);
@@ -174,49 +130,118 @@ This message was delivered by If I'm Gone - A digital legacy platform for preser
     }
   }
 
-  private generateInactivityWarningHTML(daysInactive: number, dashboardLink: string): string {
+  async sendTrustedContactVerification(
+    contactEmail: string, 
+    contactName: string, 
+    verificationToken: string,
+    senderName?: string
+  ): Promise<boolean> {
+    try {
+      const verificationLink = `${process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'}/verify-contact?token=${verificationToken}`;
+
+      const { data, error } = await supabase.functions.invoke('send-verification-email', {
+        body: {
+          to: contactEmail,
+          contactName: contactName,
+          verificationLink: verificationLink,
+          verificationToken: verificationToken,
+          senderName: senderName
+        }
+      });
+
+      if (error) {
+        console.error('Error sending verification email:', error);
+        return false;
+      }
+
+      console.log('✅ Verification email sent successfully:', { contactEmail, emailId: data?.id });
+      return true;
+    } catch (error) {
+      console.error('Error in sendTrustedContactVerification:', error);
+      return false;
+    }
+  }
+
+  async sendCustomEmail(emailData: EmailTemplate): Promise<boolean> {
+    try {
+      const { data, error } = await supabase.functions.invoke('send-email', {
+        body: emailData
+      });
+
+      if (error) {
+        console.error('Error sending custom email:', error);
+        return false;
+      }
+
+      console.log('✅ Custom email sent successfully:', { to: emailData.to, emailId: data?.id });
+      return true;
+    } catch (error) {
+      console.error('Error in sendCustomEmail:', error);
+      return false;
+    }
+  }
+
+  async sendEmergencyNotification(
+    recipientEmail: string,
+    recipientName: string,
+    subject: string,
+    message: string,
+    senderName: string
+  ): Promise<boolean> {
+    try {
+      const emailData: EmailTemplate = {
+        to: recipientEmail,
+        subject: `🚨 Emergency Notification: ${subject}`,
+        html: this.generateEmergencyNotificationHTML(recipientName, subject, message, senderName),
+        text: this.generateEmergencyNotificationText(recipientName, subject, message, senderName),
+        from: 'If I\'m Gone Emergency <emergency@ifimgone.app>'
+      };
+
+      return await this.sendCustomEmail(emailData);
+    } catch (error) {
+      console.error('Error in sendEmergencyNotification:', error);
+      return false;
+    }
+  }
+
+  private generateEmergencyNotificationHTML(recipientName: string, subject: string, message: string, senderName: string): string {
     return `
       <!DOCTYPE html>
       <html>
         <head>
           <meta charset="utf-8">
           <meta name="viewport" content="width=device-width, initial-scale=1.0">
-          <title>Activity Check - If I'm Gone</title>
+          <title>Emergency Notification</title>
           <style>
             body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; }
             .container { max-width: 600px; margin: 0 auto; padding: 20px; }
-            .header { background: #1e293b; color: white; padding: 30px; text-align: center; border-radius: 8px 8px 0 0; }
+            .header { background: #dc2626; color: white; padding: 30px; text-align: center; border-radius: 8px 8px 0 0; }
             .content { background: #f8fafc; padding: 30px; border-radius: 0 0 8px 8px; }
-            .button { display: inline-block; background: #f59e0b; color: white; padding: 12px 24px; text-decoration: none; border-radius: 6px; margin: 20px 0; }
-            .warning { background: #fef3c7; border: 1px solid #f59e0b; padding: 15px; border-radius: 6px; margin: 20px 0; }
+            .emergency { background: #fee2e2; border: 1px solid #dc2626; padding: 20px; border-radius: 6px; margin: 20px 0; }
+            .footer { text-align: center; margin-top: 30px; color: #666; font-size: 14px; }
           </style>
         </head>
         <body>
           <div class="container">
             <div class="header">
-              <h1>Activity Check Required</h1>
+              <h1>🚨 Emergency Notification</h1>
               <p>If I'm Gone - Digital Legacy Platform</p>
             </div>
             <div class="content">
-              <div class="warning">
-                <strong>⚠️ Important Notice</strong>
-                <p>You have been inactive for ${daysInactive} days.</p>
+              <h2>Hello ${recipientName},</h2>
+              
+              <div class="emergency">
+                <h3>${subject}</h3>
+                <p>${message}</p>
               </div>
               
-              <p>Hello,</p>
-              <p>We noticed that you haven't logged into your If I'm Gone account recently. As part of our inactivity monitoring system, we need to verify that you're still active.</p>
+              <p>This emergency notification was sent by the If I'm Gone platform on behalf of <strong>${senderName}</strong>.</p>
               
-              <p><strong>What happens if you don't respond?</strong></p>
-              <ul>
-                <li>If you don't log in within the next 7 days, your scheduled messages may be automatically delivered to their recipients.</li>
-                <li>This is part of the digital legacy system you set up to ensure your messages reach your loved ones when needed.</li>
-              </ul>
-              
-              <div style="text-align: center;">
-                <a href="${dashboardLink}" class="button">Log In to Confirm Activity</a>
-              </div>
-              
-              <p>If you're receiving this email in error or need assistance, please contact our support team.</p>
+              <p>If you need immediate assistance or have questions about this notification, please contact our emergency support team.</p>
+            </div>
+            <div class="footer">
+              <p>If I'm Gone - Emergency Notification System</p>
+              <p>This is an automated emergency notification</p>
             </div>
           </div>
         </body>
@@ -224,26 +249,22 @@ This message was delivered by If I'm Gone - A digital legacy platform for preser
     `;
   }
 
-  private generateInactivityWarningText(daysInactive: number, dashboardLink: string): string {
+  private generateEmergencyNotificationText(recipientName: string, subject: string, message: string, senderName: string): string {
     return `
-Activity Check Required - If I'm Gone
+🚨 EMERGENCY NOTIFICATION
 
-⚠️ Important Notice
-You have been inactive for ${daysInactive} days.
+Hello ${recipientName},
 
-Hello,
+${subject}
 
-We noticed that you haven't logged into your If I'm Gone account recently. As part of our inactivity monitoring system, we need to verify that you're still active.
+${message}
 
-What happens if you don't respond?
-- If you don't log in within the next 7 days, your scheduled messages may be automatically delivered to their recipients.
-- This is part of the digital legacy system you set up to ensure your messages reach your loved ones when needed.
+This emergency notification was sent by the If I'm Gone platform on behalf of ${senderName}.
 
-To confirm your activity, please log in to your account: ${dashboardLink}
+If you need immediate assistance or have questions about this notification, please contact our emergency support team.
 
-If you're receiving this email in error or need assistance, please contact our support team.
-
-If I'm Gone - Digital Legacy Platform
+If I'm Gone - Emergency Notification System
+This is an automated emergency notification
     `;
   }
 }

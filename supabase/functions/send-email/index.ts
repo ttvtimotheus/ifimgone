@@ -10,6 +10,8 @@ interface EmailRequest {
   subject: string;
   html: string;
   text?: string;
+  from?: string;
+  replyTo?: string;
 }
 
 serve(async (req) => {
@@ -19,7 +21,7 @@ serve(async (req) => {
   }
 
   try {
-    const { to, subject, html, text }: EmailRequest = await req.json()
+    const { to, subject, html, text, from, replyTo }: EmailRequest = await req.json()
 
     // Validate required fields
     if (!to || !subject || !html) {
@@ -32,24 +34,16 @@ serve(async (req) => {
       )
     }
 
-    // In a real implementation, you would use a service like:
-    // - Resend
-    // - SendGrid
-    // - AWS SES
-    // - Mailgun
-    // etc.
-
-    // For now, we'll simulate sending an email
-    console.log('Sending email:', { to, subject })
-    
-    // Simulate email sending delay
-    await new Promise(resolve => setTimeout(resolve, 1000))
-
-    // In production, replace this with actual email service integration
-    // Example with Resend:
-    /*
+    // Get Resend API key from environment
     const RESEND_API_KEY = Deno.env.get('RESEND_API_KEY')
+    if (!RESEND_API_KEY) {
+      throw new Error('RESEND_API_KEY environment variable is not set')
+    }
+
+    // Default sender
+    const defaultFrom = from || 'If I\'m Gone <noreply@ifimgone.app>'
     
+    // Send email via Resend API
     const res = await fetch('https://api.resend.com/emails', {
       method: 'POST',
       headers: {
@@ -57,42 +51,49 @@ serve(async (req) => {
         'Authorization': `Bearer ${RESEND_API_KEY}`,
       },
       body: JSON.stringify({
-        from: 'If I\'m Gone <noreply@ifimgone.com>',
+        from: defaultFrom,
         to: [to],
         subject: subject,
         html: html,
         text: text,
+        reply_to: replyTo,
+        tags: [
+          { name: 'category', value: 'digital-legacy' },
+          { name: 'environment', value: Deno.env.get('ENVIRONMENT') || 'development' }
+        ]
       }),
     })
 
     if (!res.ok) {
-      const error = await res.text()
-      throw new Error(`Failed to send email: ${error}`)
+      const errorText = await res.text()
+      console.error('Resend API error:', errorText)
+      throw new Error(`Failed to send email: ${errorText}`)
     }
 
     const data = await res.json()
-    */
-
-    // For development, we'll just log and return success
-    const mockResponse = {
-      id: `mock_${Date.now()}`,
-      to,
-      subject,
-      status: 'sent'
-    }
+    console.log('✅ Email sent successfully:', { id: data.id, to, subject })
 
     return new Response(
-      JSON.stringify(mockResponse),
+      JSON.stringify({
+        success: true,
+        id: data.id,
+        to,
+        subject,
+        status: 'sent'
+      }),
       { 
         headers: { ...corsHeaders, 'Content-Type': 'application/json' } 
       }
     )
 
   } catch (error) {
-    console.error('Error sending email:', error)
+    console.error('❌ Error sending email:', error)
     
     return new Response(
-      JSON.stringify({ error: error.message }),
+      JSON.stringify({ 
+        success: false,
+        error: error.message 
+      }),
       { 
         status: 500, 
         headers: { ...corsHeaders, 'Content-Type': 'application/json' } 
