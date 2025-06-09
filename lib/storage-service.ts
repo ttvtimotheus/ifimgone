@@ -9,6 +9,7 @@ export interface StorageUploadResult {
 
 export class StorageService {
   private static instance: StorageService;
+  private bucketsInitialized = false;
 
   public static getInstance(): StorageService {
     if (!StorageService.instance) {
@@ -19,64 +20,83 @@ export class StorageService {
 
   // Create storage buckets if they don't exist
   async initializeStorage(): Promise<void> {
+    if (this.bucketsInitialized) return;
+
     try {
-      // Check if buckets exist, create if they don't
-      const buckets = ['message-media', 'avatars', 'attachments'];
+      console.log('Initializing storage buckets...');
       
-      for (const bucketName of buckets) {
-        const { data: existingBucket } = await supabase.storage.getBucket(bucketName);
-        
-        if (!existingBucket) {
-          const { error } = await supabase.storage.createBucket(bucketName, {
-            public: false, // Private by default for security
-            allowedMimeTypes: this.getAllowedMimeTypes(bucketName),
-            fileSizeLimit: this.getFileSizeLimit(bucketName)
-          });
-          
-          if (error) {
-            console.warn(`Could not create bucket ${bucketName}:`, error);
-          } else {
-            console.log(`Created storage bucket: ${bucketName}`);
+      // List existing buckets first
+      const { data: existingBuckets, error: listError } = await supabase.storage.listBuckets();
+      
+      if (listError) {
+        console.warn('Could not list buckets:', listError);
+        // Continue anyway, try to create buckets
+      }
+
+      const existingBucketNames = existingBuckets?.map(b => b.name) || [];
+      console.log('Existing buckets:', existingBucketNames);
+
+      // Define buckets to create
+      const bucketsToCreate = [
+        {
+          name: 'message-media',
+          options: {
+            public: false,
+            allowedMimeTypes: [
+              'audio/webm', 'audio/mp4', 'audio/mpeg', 'audio/wav', 'audio/ogg',
+              'video/webm', 'video/mp4', 'video/quicktime', 'video/ogg'
+            ],
+            fileSizeLimit: 500 * 1024 * 1024 // 500MB
+          }
+        },
+        {
+          name: 'attachments',
+          options: {
+            public: false,
+            allowedMimeTypes: [
+              'image/jpeg', 'image/png', 'image/gif', 'image/webp', 'image/svg+xml',
+              'audio/mpeg', 'audio/wav', 'audio/ogg', 'audio/mp4', 'audio/webm',
+              'video/mp4', 'video/webm', 'video/ogg', 'video/quicktime',
+              'application/pdf', 'text/plain', 'application/msword',
+              'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+            ],
+            fileSizeLimit: 100 * 1024 * 1024 // 100MB
+          }
+        },
+        {
+          name: 'avatars',
+          options: {
+            public: true, // Avatars can be public
+            allowedMimeTypes: ['image/jpeg', 'image/png', 'image/gif', 'image/webp'],
+            fileSizeLimit: 5 * 1024 * 1024 // 5MB
           }
         }
+      ];
+
+      // Create missing buckets
+      for (const bucket of bucketsToCreate) {
+        if (!existingBucketNames.includes(bucket.name)) {
+          console.log(`Creating bucket: ${bucket.name}`);
+          
+          const { data, error } = await supabase.storage.createBucket(bucket.name, bucket.options);
+          
+          if (error) {
+            console.warn(`Could not create bucket ${bucket.name}:`, error);
+            // Don't throw error, continue with other buckets
+          } else {
+            console.log(`✅ Created storage bucket: ${bucket.name}`);
+          }
+        } else {
+          console.log(`✅ Bucket ${bucket.name} already exists`);
+        }
       }
+
+      this.bucketsInitialized = true;
+      console.log('Storage initialization complete');
+      
     } catch (error) {
       console.error('Error initializing storage:', error);
-    }
-  }
-
-  private getAllowedMimeTypes(bucketName: string): string[] {
-    switch (bucketName) {
-      case 'message-media':
-        return [
-          'audio/webm', 'audio/mp4', 'audio/mpeg', 'audio/wav', 'audio/ogg',
-          'video/webm', 'video/mp4', 'video/quicktime', 'video/ogg'
-        ];
-      case 'avatars':
-        return ['image/jpeg', 'image/png', 'image/gif', 'image/webp'];
-      case 'attachments':
-        return [
-          'image/jpeg', 'image/png', 'image/gif', 'image/webp', 'image/svg+xml',
-          'audio/mpeg', 'audio/wav', 'audio/ogg', 'audio/mp4', 'audio/webm',
-          'video/mp4', 'video/webm', 'video/ogg', 'video/quicktime',
-          'application/pdf', 'text/plain', 'application/msword',
-          'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
-        ];
-      default:
-        return ['*'];
-    }
-  }
-
-  private getFileSizeLimit(bucketName: string): number {
-    switch (bucketName) {
-      case 'message-media':
-        return 500 * 1024 * 1024; // 500MB for recordings
-      case 'avatars':
-        return 5 * 1024 * 1024; // 5MB for avatars
-      case 'attachments':
-        return 100 * 1024 * 1024; // 100MB for attachments
-      default:
-        return 50 * 1024 * 1024; // 50MB default
+      // Don't throw error, allow app to continue
     }
   }
 
@@ -88,6 +108,9 @@ export class StorageService {
     userId: string
   ): Promise<StorageUploadResult> {
     try {
+      // Ensure storage is initialized
+      await this.initializeStorage();
+
       // Generate unique filename
       const timestamp = Date.now();
       const extension = this.getFileExtension(blob.type, type);
@@ -117,20 +140,14 @@ export class StorageService {
         };
       }
 
-      // Get public URL (for private buckets, we'll use signed URLs later)
-      const { data: urlData } = supabase.storage
-        .from('message-media')
-        .getPublicUrl(filePath);
-
       console.log('Upload successful:', {
-        path: data.path,
-        url: urlData.publicUrl
+        path: data.path
       });
 
       return {
         success: true,
         path: data.path,
-        url: urlData.publicUrl
+        url: await this.getSignedUrl('message-media', data.path)
       };
     } catch (error) {
       console.error('Error uploading recording:', error);
@@ -148,6 +165,9 @@ export class StorageService {
     userId: string
   ): Promise<StorageUploadResult> {
     try {
+      // Ensure storage is initialized
+      await this.initializeStorage();
+
       const timestamp = Date.now();
       const sanitizedFileName = file.name.replace(/[^a-zA-Z0-9.-]/g, '_');
       const fileName = `${timestamp}_${sanitizedFileName}`;
@@ -175,8 +195,59 @@ export class StorageService {
         };
       }
 
+      return {
+        success: true,
+        path: data.path,
+        url: await this.getSignedUrl('attachments', data.path)
+      };
+    } catch (error) {
+      console.error('Error uploading attachment:', error);
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : 'Upload failed'
+      };
+    }
+  }
+
+  // Upload avatar
+  async uploadAvatar(
+    file: File,
+    userId: string
+  ): Promise<StorageUploadResult> {
+    try {
+      // Ensure storage is initialized
+      await this.initializeStorage();
+
+      const timestamp = Date.now();
+      const extension = file.name.split('.').pop() || 'jpg';
+      const fileName = `avatar_${userId}_${timestamp}.${extension}`;
+      const filePath = `avatars/${fileName}`;
+
+      console.log('Uploading avatar:', {
+        fileName,
+        filePath,
+        size: file.size,
+        type: file.type
+      });
+
+      const { data, error } = await supabase.storage
+        .from('avatars')
+        .upload(filePath, file, {
+          contentType: file.type,
+          upsert: true // Allow overwriting avatars
+        });
+
+      if (error) {
+        console.error('Avatar upload error:', error);
+        return {
+          success: false,
+          error: error.message
+        };
+      }
+
+      // Get public URL for avatars (since bucket is public)
       const { data: urlData } = supabase.storage
-        .from('attachments')
+        .from('avatars')
         .getPublicUrl(filePath);
 
       return {
@@ -185,7 +256,7 @@ export class StorageService {
         url: urlData.publicUrl
       };
     } catch (error) {
-      console.error('Error uploading attachment:', error);
+      console.error('Error uploading avatar:', error);
       return {
         success: false,
         error: error instanceof Error ? error.message : 'Upload failed'
@@ -258,6 +329,31 @@ export class StorageService {
     } catch (error) {
       console.error('Error calculating file hash:', error);
       return '';
+    }
+  }
+
+  // Check if bucket exists
+  async bucketExists(bucketName: string): Promise<boolean> {
+    try {
+      const { data, error } = await supabase.storage.getBucket(bucketName);
+      return !error && !!data;
+    } catch (error) {
+      return false;
+    }
+  }
+
+  // Get bucket info
+  async getBucketInfo(bucketName: string) {
+    try {
+      const { data, error } = await supabase.storage.getBucket(bucketName);
+      if (error) {
+        console.error(`Error getting bucket info for ${bucketName}:`, error);
+        return null;
+      }
+      return data;
+    } catch (error) {
+      console.error(`Error getting bucket info for ${bucketName}:`, error);
+      return null;
     }
   }
 }

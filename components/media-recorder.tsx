@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Progress } from '@/components/ui/progress';
 import { Badge } from '@/components/ui/badge';
+import { Alert, AlertDescription } from '@/components/ui/alert';
 import { 
   Mic, 
   Video, 
@@ -19,7 +20,8 @@ import {
   Settings,
   AlertTriangle,
   Save,
-  CheckCircle
+  CheckCircle,
+  Loader2
 } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { StorageService } from '@/lib/storage-service';
@@ -50,6 +52,7 @@ export function MediaRecorder({ messageId, onRecordingComplete, maxDuration = 30
   const [isSaving, setIsSaving] = useState(false);
   const [isSaved, setIsSaved] = useState(false);
   const [storagePath, setStoragePath] = useState<string | null>(null);
+  const [storageInitialized, setStorageInitialized] = useState(false);
   
   const videoRef = useRef<HTMLVideoElement>(null);
   const audioRef = useRef<HTMLAudioElement>(null);
@@ -74,7 +77,19 @@ export function MediaRecorder({ messageId, onRecordingComplete, maxDuration = 30
   }, []);
 
   const initializeStorage = async () => {
-    await storageService.initializeStorage();
+    try {
+      console.log('Initializing storage for media recorder...');
+      await storageService.initializeStorage();
+      setStorageInitialized(true);
+      console.log('Storage initialized successfully');
+    } catch (error) {
+      console.error('Failed to initialize storage:', error);
+      toast({
+        title: 'Storage Warning',
+        description: 'Storage initialization failed. Recordings may not save properly.',
+        variant: 'destructive'
+      });
+    }
   };
 
   const checkBrowserSupport = () => {
@@ -175,6 +190,16 @@ export function MediaRecorder({ messageId, onRecordingComplete, maxDuration = 30
       // Check if MediaRecorder is available
       if (typeof globalThis.MediaRecorder === 'undefined') {
         throw new Error('MediaRecorder is not supported in this browser');
+      }
+
+      // Check if storage is initialized
+      if (!storageInitialized) {
+        toast({
+          title: 'Storage Not Ready',
+          description: 'Storage is still initializing. Please wait a moment.',
+          variant: 'destructive'
+        });
+        return;
       }
 
       setRecordingType(type);
@@ -375,9 +400,20 @@ export function MediaRecorder({ messageId, onRecordingComplete, maxDuration = 30
       return;
     }
 
+    if (!storageInitialized) {
+      toast({
+        title: 'Storage Not Ready',
+        description: 'Storage is not initialized. Please try again.',
+        variant: 'destructive'
+      });
+      return;
+    }
+
     setIsSaving(true);
 
     try {
+      console.log('Saving recording to storage...');
+      
       // Upload to Supabase Storage
       const uploadResult = await storageService.uploadRecording(
         recordedBlob,
@@ -389,6 +425,8 @@ export function MediaRecorder({ messageId, onRecordingComplete, maxDuration = 30
       if (!uploadResult.success) {
         throw new Error(uploadResult.error || 'Upload failed');
       }
+
+      console.log('Recording uploaded successfully:', uploadResult.path);
 
       // Save attachment record to database
       const fileHash = await storageService.calculateFileHash(recordedBlob);
@@ -615,20 +653,34 @@ export function MediaRecorder({ messageId, onRecordingComplete, maxDuration = 30
                 Saved
               </Badge>
             )}
+            {!storageInitialized && (
+              <Badge variant="outline" className="border-yellow-500 text-yellow-400">
+                <Loader2 className="w-3 h-3 mr-1 animate-spin" />
+                Initializing...
+              </Badge>
+            )}
           </div>
         </CardTitle>
       </CardHeader>
       <CardContent className="space-y-6">
+        {/* Storage Status */}
+        {!storageInitialized && (
+          <Alert className="border-yellow-500/50 bg-yellow-500/10">
+            <Loader2 className="w-4 h-4 animate-spin" />
+            <AlertDescription className="text-yellow-300">
+              Setting up storage for recordings... This may take a moment.
+            </AlertDescription>
+          </Alert>
+        )}
+
         {/* Browser Support Info */}
         {supportedMimeTypes.length === 0 && (
-          <div className="bg-yellow-500/10 border border-yellow-500/20 rounded-lg p-4">
-            <div className="flex items-center space-x-2">
-              <AlertTriangle className="w-4 h-4 text-yellow-500" />
-              <p className="text-yellow-300 text-sm">
-                Limited recording support detected. Some features may not work properly.
-              </p>
-            </div>
-          </div>
+          <Alert className="border-yellow-500/50 bg-yellow-500/10">
+            <AlertTriangle className="w-4 h-4" />
+            <AlertDescription className="text-yellow-300">
+              Limited recording support detected. Some features may not work properly.
+            </AlertDescription>
+          </Alert>
         )}
 
         {/* Recording Controls */}
@@ -636,7 +688,7 @@ export function MediaRecorder({ messageId, onRecordingComplete, maxDuration = 30
           <div className="flex gap-4 justify-center">
             <Button
               onClick={() => startRecording('audio')}
-              disabled={!hasPermissions.audio && supportedMimeTypes.length === 0}
+              disabled={!hasPermissions.audio || !storageInitialized}
               className="bg-blue-500 hover:bg-blue-600 text-white font-semibold disabled:opacity-50"
             >
               <Mic className="w-4 h-4 mr-2" />
@@ -644,7 +696,7 @@ export function MediaRecorder({ messageId, onRecordingComplete, maxDuration = 30
             </Button>
             <Button
               onClick={() => startRecording('video')}
-              disabled={!hasPermissions.video && supportedMimeTypes.length === 0}
+              disabled={!hasPermissions.video || !storageInitialized}
               className="bg-purple-500 hover:bg-purple-600 text-white font-semibold disabled:opacity-50"
             >
               <Video className="w-4 h-4 mr-2" />
@@ -753,12 +805,12 @@ export function MediaRecorder({ messageId, onRecordingComplete, maxDuration = 30
             {!isSaved && (
               <Button
                 onClick={saveRecording}
-                disabled={isSaving}
+                disabled={isSaving || !storageInitialized}
                 className="bg-green-500 hover:bg-green-600 text-white font-semibold"
               >
                 {isSaving ? (
                   <>
-                    <div className="animate-spin mr-2 h-4 w-4 border-2 border-white rounded-full border-t-transparent"></div>
+                    <Loader2 className="w-4 h-4 mr-2 animate-spin" />
                     Saving...
                   </>
                 ) : (
@@ -790,6 +842,7 @@ export function MediaRecorder({ messageId, onRecordingComplete, maxDuration = 30
             
             <Button
               onClick={() => startRecording(recordingType!)}
+              disabled={!storageInitialized}
               className="bg-amber-500 hover:bg-amber-600 text-slate-950 font-semibold"
             >
               Record Again
@@ -806,6 +859,9 @@ export function MediaRecorder({ messageId, onRecordingComplete, maxDuration = 30
           <p>Make sure to allow microphone and camera permissions when prompted</p>
           {recordedBlob && !isSaved && (
             <p className="text-yellow-400">⚠️ Don't forget to save your recording to the message!</p>
+          )}
+          {!storageInitialized && (
+            <p className="text-yellow-400">⚠️ Storage is initializing. Please wait before recording.</p>
           )}
         </div>
       </CardContent>
