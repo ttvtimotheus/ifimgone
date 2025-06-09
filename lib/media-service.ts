@@ -35,164 +35,12 @@ export interface MessageTemplate {
 
 export class MediaService {
   private static instance: MediaService;
-  private mediaRecorder: MediaRecorder | null = null;
-  private recordedChunks: Blob[] = [];
 
   public static getInstance(): MediaService {
     if (!MediaService.instance) {
       MediaService.instance = new MediaService();
     }
     return MediaService.instance;
-  }
-
-  // Recording Functions
-  async startAudioRecording(messageId: string): Promise<string | null> {
-    try {
-      const stream = await navigator.mediaDevices.getUserMedia({ 
-        audio: {
-          echoCancellation: true,
-          noiseSuppression: true,
-          sampleRate: 44100
-        }
-      });
-
-      // Create recording session in database
-      const { data: sessionId, error } = await supabase
-        .rpc('start_recording_session', {
-          p_message_id: messageId,
-          p_session_type: 'audio',
-          p_quality_settings: {
-            sampleRate: 44100,
-            echoCancellation: true,
-            noiseSuppression: true
-          }
-        });
-
-      if (error) throw error;
-
-      this.mediaRecorder = new MediaRecorder(stream, {
-        mimeType: 'audio/webm;codecs=opus'
-      });
-
-      this.recordedChunks = [];
-
-      this.mediaRecorder.ondataavailable = (event) => {
-        if (event.data.size > 0) {
-          this.recordedChunks.push(event.data);
-        }
-      };
-
-      this.mediaRecorder.start(1000); // Collect data every second
-      return sessionId;
-    } catch (error) {
-      console.error('Error starting audio recording:', error);
-      return null;
-    }
-  }
-
-  async startVideoRecording(messageId: string): Promise<string | null> {
-    try {
-      const stream = await navigator.mediaDevices.getUserMedia({ 
-        video: {
-          width: { ideal: 1280 },
-          height: { ideal: 720 },
-          frameRate: { ideal: 30 }
-        },
-        audio: {
-          echoCancellation: true,
-          noiseSuppression: true
-        }
-      });
-
-      // Create recording session in database
-      const { data: sessionId, error } = await supabase
-        .rpc('start_recording_session', {
-          p_message_id: messageId,
-          p_session_type: 'video',
-          p_quality_settings: {
-            width: 1280,
-            height: 720,
-            frameRate: 30,
-            echoCancellation: true,
-            noiseSuppression: true
-          }
-        });
-
-      if (error) throw error;
-
-      this.mediaRecorder = new MediaRecorder(stream, {
-        mimeType: 'video/webm;codecs=vp9,opus'
-      });
-
-      this.recordedChunks = [];
-
-      this.mediaRecorder.ondataavailable = (event) => {
-        if (event.data.size > 0) {
-          this.recordedChunks.push(event.data);
-        }
-      };
-
-      this.mediaRecorder.start(1000);
-      return sessionId;
-    } catch (error) {
-      console.error('Error starting video recording:', error);
-      return null;
-    }
-  }
-
-  async stopRecording(sessionId: string): Promise<Blob | null> {
-    return new Promise((resolve) => {
-      if (!this.mediaRecorder) {
-        resolve(null);
-        return;
-      }
-
-      this.mediaRecorder.onstop = async () => {
-        const blob = new Blob(this.recordedChunks, {
-          type: this.mediaRecorder?.mimeType || 'audio/webm'
-        });
-
-        // Upload the recording
-        const uploadResult = await this.uploadRecording(sessionId, blob);
-        
-        if (uploadResult) {
-          // Complete the recording session
-          await supabase.rpc('complete_recording_session', {
-            p_session_id: sessionId,
-            p_duration: Math.floor(blob.size / 16000), // Rough estimate
-            p_file_size: blob.size,
-            p_storage_path: uploadResult.path
-          });
-        }
-
-        // Stop all tracks
-        if (this.mediaRecorder?.stream) {
-          this.mediaRecorder.stream.getTracks().forEach(track => track.stop());
-        }
-
-        resolve(blob);
-      };
-
-      this.mediaRecorder.stop();
-    });
-  }
-
-  private async uploadRecording(sessionId: string, blob: Blob): Promise<{ path: string } | null> {
-    try {
-      const fileName = `recording_${sessionId}_${Date.now()}.webm`;
-      const filePath = `recordings/${fileName}`;
-
-      const { error } = await supabase.storage
-        .from('message-media')
-        .upload(filePath, blob);
-
-      if (error) throw error;
-
-      return { path: filePath };
-    } catch (error) {
-      console.error('Error uploading recording:', error);
-      return null;
-    }
   }
 
   // File Upload Functions
@@ -396,10 +244,6 @@ export class MediaService {
       console.error('Error deleting file:', error);
       return false;
     }
-  }
-
-  isRecording(): boolean {
-    return this.mediaRecorder?.state === 'recording';
   }
 
   getSupportedMimeTypes(): string[] {

@@ -18,7 +18,6 @@ import {
   VolumeX,
   Settings
 } from 'lucide-react';
-import { MediaService } from '@/lib/media-service';
 import { useToast } from '@/hooks/use-toast';
 
 interface MediaRecorderProps {
@@ -34,13 +33,13 @@ export function MediaRecorder({ messageId, onRecordingComplete, maxDuration = 30
   const [recordedBlob, setRecordedBlob] = useState<Blob | null>(null);
   const [isPlaying, setIsPlaying] = useState(false);
   const [isMuted, setIsMuted] = useState(false);
-  const [currentSessionId, setCurrentSessionId] = useState<string | null>(null);
   const [stream, setStream] = useState<MediaStream | null>(null);
+  const [mediaRecorder, setMediaRecorder] = useState<MediaRecorder | null>(null);
+  const [recordedChunks, setRecordedChunks] = useState<Blob[]>([]);
   
   const videoRef = useRef<HTMLVideoElement>(null);
   const audioRef = useRef<HTMLAudioElement>(null);
   const intervalRef = useRef<NodeJS.Timeout | null>(null);
-  const mediaService = MediaService.getInstance();
   const { toast } = useToast();
 
   useEffect(() => {
@@ -59,12 +58,11 @@ export function MediaRecorder({ messageId, onRecordingComplete, maxDuration = 30
       setRecordingType(type);
       setDuration(0);
       setRecordedBlob(null);
+      setRecordedChunks([]);
 
-      let sessionId: string | null;
       let mediaStream: MediaStream;
 
       if (type === 'audio') {
-        sessionId = await mediaService.startAudioRecording(messageId);
         mediaStream = await navigator.mediaDevices.getUserMedia({ 
           audio: {
             echoCancellation: true,
@@ -73,7 +71,6 @@ export function MediaRecorder({ messageId, onRecordingComplete, maxDuration = 30
           }
         });
       } else {
-        sessionId = await mediaService.startVideoRecording(messageId);
         mediaStream = await navigator.mediaDevices.getUserMedia({ 
           video: {
             width: { ideal: 1280 },
@@ -86,18 +83,52 @@ export function MediaRecorder({ messageId, onRecordingComplete, maxDuration = 30
           }
         });
 
+        // Show video preview
         if (videoRef.current) {
           videoRef.current.srcObject = mediaStream;
           videoRef.current.play();
         }
       }
 
-      if (!sessionId) {
-        throw new Error('Failed to start recording session');
-      }
-
-      setCurrentSessionId(sessionId);
       setStream(mediaStream);
+
+      // Create MediaRecorder
+      const mimeType = type === 'audio' 
+        ? 'audio/webm;codecs=opus' 
+        : 'video/webm;codecs=vp9,opus';
+      
+      const recorder = new MediaRecorder(mediaStream, {
+        mimeType: MediaRecorder.isTypeSupported(mimeType) ? mimeType : undefined
+      });
+
+      const chunks: Blob[] = [];
+
+      recorder.ondataavailable = (event) => {
+        if (event.data.size > 0) {
+          chunks.push(event.data);
+          setRecordedChunks(prev => [...prev, event.data]);
+        }
+      };
+
+      recorder.onstop = () => {
+        const blob = new Blob(chunks, {
+          type: recorder.mimeType || (type === 'audio' ? 'audio/webm' : 'video/webm')
+        });
+        setRecordedBlob(blob);
+        onRecordingComplete?.(blob, type);
+        
+        // Stop video preview
+        if (videoRef.current) {
+          videoRef.current.srcObject = null;
+        }
+
+        // Stop all tracks
+        mediaStream.getTracks().forEach(track => track.stop());
+        setStream(null);
+      };
+
+      setMediaRecorder(recorder);
+      recorder.start(1000); // Collect data every second
       setIsRecording(true);
 
       // Start duration timer
@@ -118,58 +149,44 @@ export function MediaRecorder({ messageId, onRecordingComplete, maxDuration = 30
       });
     } catch (error) {
       console.error('Error starting recording:', error);
+      
+      let errorMessage = 'Failed to start recording. ';
+      if (error instanceof Error) {
+        if (error.name === 'NotAllowedError') {
+          errorMessage += 'Please allow microphone and camera access.';
+        } else if (error.name === 'NotFoundError') {
+          errorMessage += 'No microphone or camera found.';
+        } else {
+          errorMessage += error.message;
+        }
+      }
+      
       toast({
         title: 'Recording Error',
-        description: 'Failed to start recording. Please check your permissions.',
+        description: errorMessage,
         variant: 'destructive'
       });
     }
   };
 
-  const stopRecording = async () => {
-    if (!currentSessionId) return;
+  const stopRecording = () => {
+    if (!mediaRecorder || !isRecording) return;
 
-    try {
-      setIsRecording(false);
-      
-      if (intervalRef.current) {
-        clearInterval(intervalRef.current);
-        intervalRef.current = null;
-      }
-
-      const blob = await mediaService.stopRecording(currentSessionId);
-      
-      if (blob) {
-        setRecordedBlob(blob);
-        onRecordingComplete?.(blob, recordingType!);
-        
-        toast({
-          title: 'Recording Complete',
-          description: 'Your recording has been saved successfully',
-          variant: 'default'
-        });
-      }
-
-      // Stop video preview
-      if (videoRef.current) {
-        videoRef.current.srcObject = null;
-      }
-
-      // Stop all tracks
-      if (stream) {
-        stream.getTracks().forEach(track => track.stop());
-        setStream(null);
-      }
-
-      setCurrentSessionId(null);
-    } catch (error) {
-      console.error('Error stopping recording:', error);
-      toast({
-        title: 'Recording Error',
-        description: 'Failed to stop recording properly',
-        variant: 'destructive'
-      });
+    setIsRecording(false);
+    
+    if (intervalRef.current) {
+      clearInterval(intervalRef.current);
+      intervalRef.current = null;
     }
+
+    mediaRecorder.stop();
+    setMediaRecorder(null);
+
+    toast({
+      title: 'Recording Complete',
+      description: 'Your recording has been saved successfully',
+      variant: 'default'
+    });
   };
 
   const playRecording = () => {
@@ -229,6 +246,7 @@ export function MediaRecorder({ messageId, onRecordingComplete, maxDuration = 30
     setDuration(0);
     setIsPlaying(false);
     setRecordingType(null);
+    setRecordedChunks([]);
     
     if (audioRef.current) audioRef.current.src = '';
     if (videoRef.current) videoRef.current.src = '';
@@ -299,14 +317,15 @@ export function MediaRecorder({ messageId, onRecordingComplete, maxDuration = 30
           </motion.div>
         )}
 
-        {/* Video Preview */}
-        {(isRecording && recordingType === 'video') || (recordedBlob && recordingType === 'video') && (
+        {/* Video Preview/Playback */}
+        {((isRecording && recordingType === 'video') || (recordedBlob && recordingType === 'video')) && (
           <div className="relative bg-black rounded-lg overflow-hidden">
             <video
               ref={videoRef}
               className="w-full h-64 object-cover"
-              muted={isMuted}
+              muted={isMuted || isRecording}
               controls={!isRecording && recordedBlob}
+              playsInline
             />
             {isRecording && (
               <div className="absolute top-4 right-4">
@@ -317,6 +336,18 @@ export function MediaRecorder({ messageId, onRecordingComplete, maxDuration = 30
                   className="bg-black/50 text-white hover:bg-black/70"
                 >
                   {isMuted ? <VolumeX className="w-4 h-4" /> : <Volume2 className="w-4 h-4" />}
+                </Button>
+              </div>
+            )}
+            {!isRecording && recordedBlob && (
+              <div className="absolute bottom-4 left-4 right-4 flex justify-center space-x-2">
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={isPlaying ? pausePlayback : playRecording}
+                  className="bg-black/50 text-white hover:bg-black/70"
+                >
+                  {isPlaying ? <Pause className="w-4 h-4" /> : <Play className="w-4 h-4" />}
                 </Button>
               </div>
             )}
@@ -382,6 +413,7 @@ export function MediaRecorder({ messageId, onRecordingComplete, maxDuration = 30
         <div className="text-xs text-slate-500 text-center space-y-1">
           <p>Maximum recording duration: {formatDuration(maxDuration)}</p>
           <p>Supported formats: WebM (Audio/Video)</p>
+          <p>Make sure to allow microphone and camera permissions when prompted</p>
         </div>
       </CardContent>
     </Card>
