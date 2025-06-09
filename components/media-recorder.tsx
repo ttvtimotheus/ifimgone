@@ -21,7 +21,8 @@ import {
   AlertTriangle,
   Save,
   CheckCircle,
-  Loader2
+  Loader2,
+  RefreshCw
 } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { StorageService } from '@/lib/storage-service';
@@ -53,6 +54,7 @@ export function MediaRecorder({ messageId, onRecordingComplete, maxDuration = 30
   const [isSaved, setIsSaved] = useState(false);
   const [storagePath, setStoragePath] = useState<string | null>(null);
   const [storageInitialized, setStorageInitialized] = useState(false);
+  const [storageError, setStorageError] = useState<string | null>(null);
   
   const videoRef = useRef<HTMLVideoElement>(null);
   const audioRef = useRef<HTMLAudioElement>(null);
@@ -78,18 +80,40 @@ export function MediaRecorder({ messageId, onRecordingComplete, maxDuration = 30
 
   const initializeStorage = async () => {
     try {
-      console.log('Initializing storage for media recorder...');
-      await storageService.initializeStorage();
+      console.log('🔧 Initializing storage for media recorder...');
+      setStorageError(null);
+      
+      // Set a reasonable timeout for initialization
+      const initPromise = storageService.initializeStorage();
+      const timeoutPromise = new Promise((_, reject) => {
+        setTimeout(() => reject(new Error('Storage initialization timeout')), 15000); // 15 seconds
+      });
+
+      await Promise.race([initPromise, timeoutPromise]);
+      
       setStorageInitialized(true);
-      console.log('Storage initialized successfully');
+      console.log('✅ Storage initialized successfully');
+      
     } catch (error) {
-      console.error('Failed to initialize storage:', error);
+      console.error('❌ Storage initialization failed:', error);
+      setStorageError(error instanceof Error ? error.message : 'Storage initialization failed');
+      
+      // Still mark as initialized to allow the app to function
+      setStorageInitialized(true);
+      
       toast({
         title: 'Storage Warning',
-        description: 'Storage initialization failed. Recordings may not save properly.',
+        description: 'Storage setup had issues. Recording may not save properly.',
         variant: 'destructive'
       });
     }
+  };
+
+  const retryStorageInit = async () => {
+    setStorageInitialized(false);
+    setStorageError(null);
+    storageService.resetInitialization();
+    await initializeStorage();
   };
 
   const checkBrowserSupport = () => {
@@ -121,7 +145,7 @@ export function MediaRecorder({ messageId, onRecordingComplete, maxDuration = 30
     });
 
     setSupportedMimeTypes(supported);
-    console.log('Supported MIME types:', supported);
+    console.log('📋 Supported MIME types:', supported);
   };
 
   const checkPermissions = async () => {
@@ -192,16 +216,6 @@ export function MediaRecorder({ messageId, onRecordingComplete, maxDuration = 30
         throw new Error('MediaRecorder is not supported in this browser');
       }
 
-      // Check if storage is initialized
-      if (!storageInitialized) {
-        toast({
-          title: 'Storage Not Ready',
-          description: 'Storage is still initializing. Please wait a moment.',
-          variant: 'destructive'
-        });
-        return;
-      }
-
       setRecordingType(type);
       setDuration(0);
       setRecordedBlob(null);
@@ -249,7 +263,7 @@ export function MediaRecorder({ messageId, onRecordingComplete, maxDuration = 30
 
       // Get the best supported MIME type
       const mimeType = getBestMimeType(type);
-      console.log('Using MIME type:', mimeType);
+      console.log('🎬 Using MIME type:', mimeType);
 
       // Create MediaRecorder with fallback options
       let recorder: globalThis.MediaRecorder;
@@ -278,7 +292,7 @@ export function MediaRecorder({ messageId, onRecordingComplete, maxDuration = 30
         const finalMimeType = recorder.mimeType || (type === 'audio' ? 'audio/webm' : 'video/webm');
         const blob = new Blob(chunks, { type: finalMimeType });
         
-        console.log('Recording stopped. Blob size:', blob.size, 'MIME type:', finalMimeType);
+        console.log('🎬 Recording stopped. Blob size:', blob.size, 'MIME type:', finalMimeType);
         
         setRecordedBlob(blob);
         onRecordingComplete?.(blob, type);
@@ -400,19 +414,10 @@ export function MediaRecorder({ messageId, onRecordingComplete, maxDuration = 30
       return;
     }
 
-    if (!storageInitialized) {
-      toast({
-        title: 'Storage Not Ready',
-        description: 'Storage is not initialized. Please try again.',
-        variant: 'destructive'
-      });
-      return;
-    }
-
     setIsSaving(true);
 
     try {
-      console.log('Saving recording to storage...');
+      console.log('💾 Saving recording to storage...');
       
       // Upload to Supabase Storage
       const uploadResult = await storageService.uploadRecording(
@@ -426,7 +431,7 @@ export function MediaRecorder({ messageId, onRecordingComplete, maxDuration = 30
         throw new Error(uploadResult.error || 'Upload failed');
       }
 
-      console.log('Recording uploaded successfully:', uploadResult.path);
+      console.log('✅ Recording uploaded successfully:', uploadResult.path);
 
       // Save attachment record to database
       const fileHash = await storageService.calculateFileHash(recordedBlob);
@@ -664,11 +669,32 @@ export function MediaRecorder({ messageId, onRecordingComplete, maxDuration = 30
       </CardHeader>
       <CardContent className="space-y-6">
         {/* Storage Status */}
-        {!storageInitialized && (
+        {!storageInitialized && !storageError && (
           <Alert className="border-yellow-500/50 bg-yellow-500/10">
             <Loader2 className="w-4 h-4 animate-spin" />
             <AlertDescription className="text-yellow-300">
-              Setting up storage for recordings... This may take a moment.
+              Setting up storage for recordings... This should only take a few seconds.
+            </AlertDescription>
+          </Alert>
+        )}
+
+        {/* Storage Error */}
+        {storageError && (
+          <Alert className="border-red-500/50 bg-red-500/10">
+            <AlertTriangle className="w-4 h-4" />
+            <AlertDescription className="text-red-300">
+              <div className="flex items-center justify-between">
+                <span>Storage setup failed: {storageError}</span>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={retryStorageInit}
+                  className="text-red-300 hover:text-white"
+                >
+                  <RefreshCw className="w-3 h-3 mr-1" />
+                  Retry
+                </Button>
+              </div>
             </AlertDescription>
           </Alert>
         )}
@@ -688,7 +714,7 @@ export function MediaRecorder({ messageId, onRecordingComplete, maxDuration = 30
           <div className="flex gap-4 justify-center">
             <Button
               onClick={() => startRecording('audio')}
-              disabled={!hasPermissions.audio || !storageInitialized}
+              disabled={!hasPermissions.audio}
               className="bg-blue-500 hover:bg-blue-600 text-white font-semibold disabled:opacity-50"
             >
               <Mic className="w-4 h-4 mr-2" />
@@ -696,7 +722,7 @@ export function MediaRecorder({ messageId, onRecordingComplete, maxDuration = 30
             </Button>
             <Button
               onClick={() => startRecording('video')}
-              disabled={!hasPermissions.video || !storageInitialized}
+              disabled={!hasPermissions.video}
               className="bg-purple-500 hover:bg-purple-600 text-white font-semibold disabled:opacity-50"
             >
               <Video className="w-4 h-4 mr-2" />
@@ -842,7 +868,6 @@ export function MediaRecorder({ messageId, onRecordingComplete, maxDuration = 30
             
             <Button
               onClick={() => startRecording(recordingType!)}
-              disabled={!storageInitialized}
               className="bg-amber-500 hover:bg-amber-600 text-slate-950 font-semibold"
             >
               Record Again
@@ -860,8 +885,8 @@ export function MediaRecorder({ messageId, onRecordingComplete, maxDuration = 30
           {recordedBlob && !isSaved && (
             <p className="text-yellow-400">⚠️ Don't forget to save your recording to the message!</p>
           )}
-          {!storageInitialized && (
-            <p className="text-yellow-400">⚠️ Storage is initializing. Please wait before recording.</p>
+          {storageError && (
+            <p className="text-red-400">⚠️ Storage has issues. Recordings may not save properly.</p>
           )}
         </div>
       </CardContent>

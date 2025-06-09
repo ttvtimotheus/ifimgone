@@ -10,6 +10,7 @@ export interface StorageUploadResult {
 export class StorageService {
   private static instance: StorageService;
   private bucketsInitialized = false;
+  private initializationPromise: Promise<void> | null = null;
 
   public static getInstance(): StorageService {
     if (!StorageService.instance) {
@@ -20,83 +21,75 @@ export class StorageService {
 
   // Create storage buckets if they don't exist
   async initializeStorage(): Promise<void> {
-    if (this.bucketsInitialized) return;
+    // If already initialized, return immediately
+    if (this.bucketsInitialized) {
+      return;
+    }
 
+    // If initialization is already in progress, wait for it
+    if (this.initializationPromise) {
+      return this.initializationPromise;
+    }
+
+    // Start initialization
+    this.initializationPromise = this.performInitialization();
+    
     try {
-      console.log('Initializing storage buckets...');
+      await this.initializationPromise;
+    } finally {
+      this.initializationPromise = null;
+    }
+  }
+
+  private async performInitialization(): Promise<void> {
+    try {
+      console.log('🔧 Starting storage initialization...');
       
-      // List existing buckets first
-      const { data: existingBuckets, error: listError } = await supabase.storage.listBuckets();
+      // Simple check - try to list buckets with a timeout
+      const timeoutPromise = new Promise((_, reject) => {
+        setTimeout(() => reject(new Error('Storage check timeout')), 10000); // 10 second timeout
+      });
+
+      const listPromise = supabase.storage.listBuckets();
+      
+      const { data: existingBuckets, error: listError } = await Promise.race([
+        listPromise,
+        timeoutPromise
+      ]) as any;
       
       if (listError) {
-        console.warn('Could not list buckets:', listError);
-        // Continue anyway, try to create buckets
+        console.warn('⚠️ Could not list buckets, but continuing:', listError.message);
+        // Mark as initialized anyway to prevent infinite loops
+        this.bucketsInitialized = true;
+        return;
       }
 
-      const existingBucketNames = existingBuckets?.map(b => b.name) || [];
-      console.log('Existing buckets:', existingBucketNames);
+      const existingBucketNames = existingBuckets?.map((b: any) => b.name) || [];
+      console.log('📦 Found existing buckets:', existingBucketNames);
 
-      // Define buckets to create
-      const bucketsToCreate = [
-        {
-          name: 'message-media',
-          options: {
-            public: false,
-            allowedMimeTypes: [
-              'audio/webm', 'audio/mp4', 'audio/mpeg', 'audio/wav', 'audio/ogg',
-              'video/webm', 'video/mp4', 'video/quicktime', 'video/ogg'
-            ],
-            fileSizeLimit: 500 * 1024 * 1024 // 500MB
-          }
-        },
-        {
-          name: 'attachments',
-          options: {
-            public: false,
-            allowedMimeTypes: [
-              'image/jpeg', 'image/png', 'image/gif', 'image/webp', 'image/svg+xml',
-              'audio/mpeg', 'audio/wav', 'audio/ogg', 'audio/mp4', 'audio/webm',
-              'video/mp4', 'video/webm', 'video/ogg', 'video/quicktime',
-              'application/pdf', 'text/plain', 'application/msword',
-              'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
-            ],
-            fileSizeLimit: 100 * 1024 * 1024 // 100MB
-          }
-        },
-        {
-          name: 'avatars',
-          options: {
-            public: true, // Avatars can be public
-            allowedMimeTypes: ['image/jpeg', 'image/png', 'image/gif', 'image/webp'],
-            fileSizeLimit: 5 * 1024 * 1024 // 5MB
-          }
-        }
-      ];
+      // Check if required buckets exist
+      const requiredBuckets = ['message-media', 'attachments', 'avatars'];
+      const missingBuckets = requiredBuckets.filter(name => !existingBucketNames.includes(name));
 
-      // Create missing buckets
-      for (const bucket of bucketsToCreate) {
-        if (!existingBucketNames.includes(bucket.name)) {
-          console.log(`Creating bucket: ${bucket.name}`);
-          
-          const { data, error } = await supabase.storage.createBucket(bucket.name, bucket.options);
-          
-          if (error) {
-            console.warn(`Could not create bucket ${bucket.name}:`, error);
-            // Don't throw error, continue with other buckets
-          } else {
-            console.log(`✅ Created storage bucket: ${bucket.name}`);
-          }
-        } else {
-          console.log(`✅ Bucket ${bucket.name} already exists`);
-        }
+      if (missingBuckets.length === 0) {
+        console.log('✅ All required storage buckets exist');
+        this.bucketsInitialized = true;
+        return;
       }
 
+      console.log('🔨 Missing buckets:', missingBuckets);
+      console.log('ℹ️ Buckets should be created via Supabase migrations');
+      
+      // Mark as initialized even if some buckets are missing
+      // The app should still work, just with limited functionality
       this.bucketsInitialized = true;
-      console.log('Storage initialization complete');
+      console.log('✅ Storage initialization complete (with warnings)');
       
     } catch (error) {
-      console.error('Error initializing storage:', error);
-      // Don't throw error, allow app to continue
+      console.error('❌ Storage initialization failed:', error);
+      // Mark as initialized to prevent infinite retries
+      this.bucketsInitialized = true;
+      throw error;
     }
   }
 
@@ -108,8 +101,10 @@ export class StorageService {
     userId: string
   ): Promise<StorageUploadResult> {
     try {
-      // Ensure storage is initialized
-      await this.initializeStorage();
+      // Quick initialization check
+      if (!this.bucketsInitialized) {
+        await this.initializeStorage();
+      }
 
       // Generate unique filename
       const timestamp = Date.now();
@@ -117,7 +112,7 @@ export class StorageService {
       const fileName = `${type}_${messageId}_${timestamp}.${extension}`;
       const filePath = `recordings/${userId}/${fileName}`;
 
-      console.log('Uploading recording:', {
+      console.log('📤 Uploading recording:', {
         fileName,
         filePath,
         size: blob.size,
@@ -133,16 +128,14 @@ export class StorageService {
         });
 
       if (error) {
-        console.error('Storage upload error:', error);
+        console.error('❌ Storage upload error:', error);
         return {
           success: false,
           error: error.message
         };
       }
 
-      console.log('Upload successful:', {
-        path: data.path
-      });
+      console.log('✅ Upload successful:', data.path);
 
       return {
         success: true,
@@ -150,7 +143,7 @@ export class StorageService {
         url: await this.getSignedUrl('message-media', data.path)
       };
     } catch (error) {
-      console.error('Error uploading recording:', error);
+      console.error('❌ Error uploading recording:', error);
       return {
         success: false,
         error: error instanceof Error ? error.message : 'Upload failed'
@@ -165,15 +158,17 @@ export class StorageService {
     userId: string
   ): Promise<StorageUploadResult> {
     try {
-      // Ensure storage is initialized
-      await this.initializeStorage();
+      // Quick initialization check
+      if (!this.bucketsInitialized) {
+        await this.initializeStorage();
+      }
 
       const timestamp = Date.now();
       const sanitizedFileName = file.name.replace(/[^a-zA-Z0-9.-]/g, '_');
       const fileName = `${timestamp}_${sanitizedFileName}`;
       const filePath = `attachments/${userId}/${messageId}/${fileName}`;
 
-      console.log('Uploading attachment:', {
+      console.log('📤 Uploading attachment:', {
         fileName,
         filePath,
         size: file.size,
@@ -188,12 +183,14 @@ export class StorageService {
         });
 
       if (error) {
-        console.error('Attachment upload error:', error);
+        console.error('❌ Attachment upload error:', error);
         return {
           success: false,
           error: error.message
         };
       }
+
+      console.log('✅ Attachment upload successful:', data.path);
 
       return {
         success: true,
@@ -201,7 +198,7 @@ export class StorageService {
         url: await this.getSignedUrl('attachments', data.path)
       };
     } catch (error) {
-      console.error('Error uploading attachment:', error);
+      console.error('❌ Error uploading attachment:', error);
       return {
         success: false,
         error: error instanceof Error ? error.message : 'Upload failed'
@@ -215,15 +212,17 @@ export class StorageService {
     userId: string
   ): Promise<StorageUploadResult> {
     try {
-      // Ensure storage is initialized
-      await this.initializeStorage();
+      // Quick initialization check
+      if (!this.bucketsInitialized) {
+        await this.initializeStorage();
+      }
 
       const timestamp = Date.now();
       const extension = file.name.split('.').pop() || 'jpg';
       const fileName = `avatar_${userId}_${timestamp}.${extension}`;
       const filePath = `avatars/${fileName}`;
 
-      console.log('Uploading avatar:', {
+      console.log('📤 Uploading avatar:', {
         fileName,
         filePath,
         size: file.size,
@@ -238,7 +237,7 @@ export class StorageService {
         });
 
       if (error) {
-        console.error('Avatar upload error:', error);
+        console.error('❌ Avatar upload error:', error);
         return {
           success: false,
           error: error.message
@@ -250,13 +249,15 @@ export class StorageService {
         .from('avatars')
         .getPublicUrl(filePath);
 
+      console.log('✅ Avatar upload successful:', data.path);
+
       return {
         success: true,
         path: data.path,
         url: urlData.publicUrl
       };
     } catch (error) {
-      console.error('Error uploading avatar:', error);
+      console.error('❌ Error uploading avatar:', error);
       return {
         success: false,
         error: error instanceof Error ? error.message : 'Upload failed'
@@ -272,13 +273,13 @@ export class StorageService {
         .createSignedUrl(path, expiresIn);
 
       if (error) {
-        console.error('Error creating signed URL:', error);
+        console.error('❌ Error creating signed URL:', error);
         return null;
       }
 
       return data.signedUrl;
     } catch (error) {
-      console.error('Error getting signed URL:', error);
+      console.error('❌ Error getting signed URL:', error);
       return null;
     }
   }
@@ -291,13 +292,14 @@ export class StorageService {
         .remove([path]);
 
       if (error) {
-        console.error('Error deleting file:', error);
+        console.error('❌ Error deleting file:', error);
         return false;
       }
 
+      console.log('✅ File deleted successfully:', path);
       return true;
     } catch (error) {
-      console.error('Error deleting file:', error);
+      console.error('❌ Error deleting file:', error);
       return false;
     }
   }
@@ -327,7 +329,7 @@ export class StorageService {
       const hashArray = Array.from(new Uint8Array(hashBuffer));
       return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
     } catch (error) {
-      console.error('Error calculating file hash:', error);
+      console.error('❌ Error calculating file hash:', error);
       return '';
     }
   }
@@ -347,13 +349,25 @@ export class StorageService {
     try {
       const { data, error } = await supabase.storage.getBucket(bucketName);
       if (error) {
-        console.error(`Error getting bucket info for ${bucketName}:`, error);
+        console.error(`❌ Error getting bucket info for ${bucketName}:`, error);
         return null;
       }
       return data;
     } catch (error) {
-      console.error(`Error getting bucket info for ${bucketName}:`, error);
+      console.error(`❌ Error getting bucket info for ${bucketName}:`, error);
       return null;
     }
+  }
+
+  // Force reset initialization (for debugging)
+  resetInitialization(): void {
+    this.bucketsInitialized = false;
+    this.initializationPromise = null;
+    console.log('🔄 Storage initialization reset');
+  }
+
+  // Check initialization status
+  isInitialized(): boolean {
+    return this.bucketsInitialized;
   }
 }
