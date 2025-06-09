@@ -106,7 +106,9 @@ export class InactivityChecker {
       await this.emailService.sendInactivityWarning(
         profile.id,
         profile.email,
-        daysSinceActive
+        profile.full_name || 'User',
+        daysSinceActive,
+        profile.inactivity_threshold || 30
       );
 
       // Log the activity
@@ -152,7 +154,9 @@ export class InactivityChecker {
       await this.emailService.sendInactivityWarning(
         profile.id,
         profile.email,
-        daysSinceActive
+        profile.full_name || 'User',
+        daysSinceActive,
+        profile.inactivity_threshold || 30
       );
 
       // Log the warning
