@@ -21,6 +21,8 @@ export class EmailService {
 
   async sendMessage(messageId: string, recipientEmail: string, recipientName: string): Promise<boolean> {
     try {
+      console.log('🚀 Starting message delivery email process...', { messageId, recipientEmail });
+      
       // Fetch message details with sender info
       const { data: message, error: messageError } = await supabase
         .from('messages')
@@ -32,14 +34,24 @@ export class EmailService {
         .single();
 
       if (messageError || !message) {
-        console.error('Error fetching message:', messageError);
+        console.error('❌ Error fetching message:', messageError);
         return false;
       }
+
+      console.log('📧 Message data retrieved:', {
+        title: message.title,
+        senderName: message.profiles?.full_name,
+        senderEmail: message.profiles?.email
+      });
 
       // Create a secure link for viewing the message
       const messageLink = `${process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'}/message/${messageId}`;
 
+      console.log('🔗 Message link created:', messageLink);
+
       // Send email using Supabase Edge Function
+      console.log('📤 Calling send-message-delivery function...');
+      
       const { data, error } = await supabase.functions.invoke('send-message-delivery', {
         body: {
           to: recipientEmail,
@@ -53,19 +65,25 @@ export class EmailService {
         }
       });
 
+      console.log('📬 Edge function response:', { data, error });
+
       if (error) {
-        console.error('Error sending message delivery email:', error);
+        console.error('❌ Error from edge function:', error);
         return false;
       }
 
       // Update message status to delivered
-      await supabase
+      const { error: updateError } = await supabase
         .from('messages')
         .update({ 
           status: 'delivered',
           delivered_at: new Date().toISOString()
         })
         .eq('id', messageId);
+
+      if (updateError) {
+        console.error('❌ Error updating message status:', updateError);
+      }
 
       // Log the delivery
       await supabase
@@ -85,14 +103,18 @@ export class EmailService {
       console.log('✅ Message delivered successfully:', { messageId, recipientEmail, emailId: data?.id });
       return true;
     } catch (error) {
-      console.error('Error in sendMessage:', error);
+      console.error('💥 Error in sendMessage:', error);
       return false;
     }
   }
 
   async sendInactivityWarning(userId: string, userEmail: string, userName: string, daysInactive: number, thresholdDays: number = 30): Promise<boolean> {
     try {
+      console.log('🚀 Starting inactivity warning email...', { userId, userEmail, daysInactive });
+      
       const dashboardLink = `${process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'}/dashboard`;
+
+      console.log('📤 Calling send-inactivity-warning function...');
 
       const { data, error } = await supabase.functions.invoke('send-inactivity-warning', {
         body: {
@@ -104,8 +126,10 @@ export class EmailService {
         }
       });
 
+      console.log('📬 Inactivity warning response:', { data, error });
+
       if (error) {
-        console.error('Error sending inactivity warning:', error);
+        console.error('❌ Error sending inactivity warning:', error);
         return false;
       }
 
@@ -125,7 +149,7 @@ export class EmailService {
       console.log('✅ Inactivity warning sent successfully:', { userId, daysInactive, emailId: data?.id });
       return true;
     } catch (error) {
-      console.error('Error in sendInactivityWarning:', error);
+      console.error('💥 Error in sendInactivityWarning:', error);
       return false;
     }
   }
@@ -137,7 +161,11 @@ export class EmailService {
     senderName?: string
   ): Promise<boolean> {
     try {
+      console.log('🚀 Starting verification email...', { contactEmail, contactName });
+      
       const verificationLink = `${process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'}/verify-contact?token=${verificationToken}`;
+
+      console.log('📤 Calling send-verification-email function...');
 
       const { data, error } = await supabase.functions.invoke('send-verification-email', {
         body: {
@@ -149,35 +177,86 @@ export class EmailService {
         }
       });
 
+      console.log('📬 Verification email response:', { data, error });
+
       if (error) {
-        console.error('Error sending verification email:', error);
+        console.error('❌ Error sending verification email:', error);
         return false;
       }
 
       console.log('✅ Verification email sent successfully:', { contactEmail, emailId: data?.id });
       return true;
     } catch (error) {
-      console.error('Error in sendTrustedContactVerification:', error);
+      console.error('💥 Error in sendTrustedContactVerification:', error);
       return false;
     }
   }
 
   async sendCustomEmail(emailData: EmailTemplate): Promise<boolean> {
     try {
+      console.log('🚀 Starting custom email...', { to: emailData.to, subject: emailData.subject });
+      
+      console.log('📤 Calling send-email function...');
+
       const { data, error } = await supabase.functions.invoke('send-email', {
         body: emailData
       });
 
+      console.log('📬 Custom email response:', { data, error });
+
       if (error) {
-        console.error('Error sending custom email:', error);
+        console.error('❌ Error sending custom email:', error);
         return false;
       }
 
       console.log('✅ Custom email sent successfully:', { to: emailData.to, emailId: data?.id });
       return true;
     } catch (error) {
-      console.error('Error in sendCustomEmail:', error);
+      console.error('💥 Error in sendCustomEmail:', error);
       return false;
+    }
+  }
+
+  async testEmailService(): Promise<{ success: boolean; message: string; details?: any }> {
+    try {
+      console.log('🧪 Testing email service...');
+      
+      // Test the generic send-email function
+      const testEmail = {
+        to: 'test@example.com',
+        subject: 'Test Email from If I\'m Gone',
+        html: '<h1>Test Email</h1><p>This is a test email to verify the email service is working.</p>',
+        text: 'Test Email\n\nThis is a test email to verify the email service is working.'
+      };
+
+      console.log('📤 Sending test email...');
+
+      const { data, error } = await supabase.functions.invoke('send-email', {
+        body: testEmail
+      });
+
+      console.log('📬 Test email response:', { data, error });
+
+      if (error) {
+        return {
+          success: false,
+          message: 'Email service test failed',
+          details: error
+        };
+      }
+
+      return {
+        success: true,
+        message: 'Email service is working correctly',
+        details: data
+      };
+    } catch (error) {
+      console.error('💥 Error testing email service:', error);
+      return {
+        success: false,
+        message: 'Email service test encountered an error',
+        details: error
+      };
     }
   }
 
@@ -189,6 +268,8 @@ export class EmailService {
     senderName: string
   ): Promise<boolean> {
     try {
+      console.log('🚀 Starting emergency notification...', { recipientEmail, subject });
+      
       const emailData: EmailTemplate = {
         to: recipientEmail,
         subject: `🚨 Emergency Notification: ${subject}`,
@@ -199,7 +280,7 @@ export class EmailService {
 
       return await this.sendCustomEmail(emailData);
     } catch (error) {
-      console.error('Error in sendEmergencyNotification:', error);
+      console.error('💥 Error in sendEmergencyNotification:', error);
       return false;
     }
   }
