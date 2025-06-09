@@ -1,4 +1,5 @@
 import { supabase } from './supabase';
+import { sql } from '@supabase/supabase-js';
 
 export interface RecordingSession {
   id: string;
@@ -194,7 +195,7 @@ export class MediaService {
       // Increment usage count
       await supabase
         .from('message_templates')
-        .update({ usage_count: supabase.sql`usage_count + 1` })
+        .update({ usage_count: sql`usage_count + 1` })
         .eq('id', templateId);
 
       // Get template
