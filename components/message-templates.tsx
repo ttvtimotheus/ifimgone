@@ -46,7 +46,7 @@ export function MessageTemplates({ onTemplateSelect, onTemplateCreate }: Message
   const [loading, setLoading] = useState(true);
   const [showCreateDialog, setShowCreateDialog] = useState(false);
   const [showPreviewDialog, setShowPreviewDialog] = useState(false);
-  const [previewTemplate, setPreviewTemplate] = useState<MessageTemplate | null>(null);
+  const [selectedPreviewTemplate, setSelectedPreviewTemplate] = useState<MessageTemplate | null>(null);
   
   // Create template form
   const [newTemplate, setNewTemplate] = useState({
@@ -178,8 +178,8 @@ export function MessageTemplates({ onTemplateSelect, onTemplateCreate }: Message
     }
   };
 
-  const previewTemplate = (template: MessageTemplate) => {
-    setPreviewTemplate(template);
+  const showTemplatePreview = (template: MessageTemplate) => {
+    setSelectedPreviewTemplate(template);
     setShowPreviewDialog(true);
   };
 
@@ -430,7 +430,7 @@ export function MessageTemplates({ onTemplateSelect, onTemplateCreate }: Message
                           <Button
                             variant="ghost"
                             size="sm"
-                            onClick={() => previewTemplate(template)}
+                            onClick={() => showTemplatePreview(template)}
                             className="text-slate-400 hover:text-white text-xs"
                           >
                             <Eye className="w-3 h-3 mr-1" />
@@ -494,22 +494,22 @@ export function MessageTemplates({ onTemplateSelect, onTemplateCreate }: Message
             <DialogHeader>
               <DialogTitle className="text-white">Template Preview</DialogTitle>
               <DialogDescription>
-                {previewTemplate?.name} - {getCategoryInfo(previewTemplate?.category || '').name}
+                {selectedPreviewTemplate?.name} - {getCategoryInfo(selectedPreviewTemplate?.category || '').name}
               </DialogDescription>
             </DialogHeader>
             
-            {previewTemplate && (
+            {selectedPreviewTemplate && (
               <div className="space-y-4">
                 <div className="bg-slate-800 p-4 rounded-lg">
                   <pre className="text-white whitespace-pre-wrap text-sm">
-                    {previewTemplate.content_template}
+                    {selectedPreviewTemplate.content_template}
                   </pre>
                 </div>
                 
                 <div className="flex justify-end space-x-2">
                   <Button 
                     variant="outline" 
-                    onClick={() => copyTemplate(previewTemplate)}
+                    onClick={() => copyTemplate(selectedPreviewTemplate)}
                     className="border-slate-600 text-slate-300"
                   >
                     <Copy className="w-4 h-4 mr-2" />
@@ -517,7 +517,7 @@ export function MessageTemplates({ onTemplateSelect, onTemplateCreate }: Message
                   </Button>
                   <Button 
                     onClick={() => {
-                      useTemplate(previewTemplate);
+                      useTemplate(selectedPreviewTemplate);
                       setShowPreviewDialog(false);
                     }}
                     className="bg-amber-500 hover:bg-amber-600 text-slate-950 font-semibold"
