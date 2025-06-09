@@ -802,7 +802,7 @@ export function MediaRecorder({ messageId, onRecordingComplete, maxDuration = 30
               ref={videoRef}
               className="w-full h-64 object-cover"
               muted={isMuted || isRecording}
-              controls={!isRecording && recordedBlob}
+              controls={!isRecording && !!recordedBlob}
               playsInline
               autoPlay={isRecording}
             />

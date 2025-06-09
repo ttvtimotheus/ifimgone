@@ -7,9 +7,6 @@ const nextConfig = {
     unoptimized: true,
     domains: ['images.pexels.com', 'pexels.com']
   },
-  experimental: {
-    appDir: true,
-  },
 };
 
 module.exports = nextConfig;
