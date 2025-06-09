@@ -21,13 +21,13 @@ import {
 } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 
-interface MediaRecorderProps {
+interface MediaRecorderComponentProps {
   messageId: string;
   onRecordingComplete?: (blob: Blob, type: 'audio' | 'video') => void;
   maxDuration?: number; // in seconds
 }
 
-export function MediaRecorder({ messageId, onRecordingComplete, maxDuration = 300 }: MediaRecorderProps) {
+export function MediaRecorder({ messageId, onRecordingComplete, maxDuration = 300 }: MediaRecorderComponentProps) {
   const [isRecording, setIsRecording] = useState(false);
   const [recordingType, setRecordingType] = useState<'audio' | 'video' | null>(null);
   const [duration, setDuration] = useState(0);
@@ -35,7 +35,7 @@ export function MediaRecorder({ messageId, onRecordingComplete, maxDuration = 30
   const [isPlaying, setIsPlaying] = useState(false);
   const [isMuted, setIsMuted] = useState(false);
   const [stream, setStream] = useState<MediaStream | null>(null);
-  const [mediaRecorder, setMediaRecorder] = useState<MediaRecorder | null>(null);
+  const [mediaRecorderInstance, setMediaRecorderInstance] = useState<globalThis.MediaRecorder | null>(null);
   const [recordedChunks, setRecordedChunks] = useState<Blob[]>([]);
   const [supportedMimeTypes, setSupportedMimeTypes] = useState<string[]>([]);
   const [hasPermissions, setHasPermissions] = useState<{audio: boolean, video: boolean}>({
@@ -63,6 +63,12 @@ export function MediaRecorder({ messageId, onRecordingComplete, maxDuration = 30
   }, []);
 
   const checkBrowserSupport = () => {
+    // Check if MediaRecorder is available
+    if (typeof window === 'undefined' || typeof globalThis.MediaRecorder === 'undefined') {
+      console.warn('MediaRecorder not available');
+      return;
+    }
+
     const types = [
       'audio/webm;codecs=opus',
       'audio/webm',
@@ -77,9 +83,7 @@ export function MediaRecorder({ messageId, onRecordingComplete, maxDuration = 30
 
     const supported = types.filter(type => {
       try {
-        return typeof MediaRecorder !== 'undefined' && 
-               typeof MediaRecorder.isTypeSupported === 'function' && 
-               MediaRecorder.isTypeSupported(type);
+        return globalThis.MediaRecorder.isTypeSupported && globalThis.MediaRecorder.isTypeSupported(type);
       } catch (error) {
         console.warn('Error checking MIME type support:', type, error);
         return false;
@@ -91,6 +95,11 @@ export function MediaRecorder({ messageId, onRecordingComplete, maxDuration = 30
   };
 
   const checkPermissions = async () => {
+    if (typeof navigator === 'undefined' || !navigator.mediaDevices) {
+      console.warn('MediaDevices not available');
+      return;
+    }
+
     try {
       // Check audio permission
       try {
@@ -148,6 +157,11 @@ export function MediaRecorder({ messageId, onRecordingComplete, maxDuration = 30
 
   const startRecording = async (type: 'audio' | 'video') => {
     try {
+      // Check if MediaRecorder is available
+      if (typeof globalThis.MediaRecorder === 'undefined') {
+        throw new Error('MediaRecorder is not supported in this browser');
+      }
+
       setRecordingType(type);
       setDuration(0);
       setRecordedBlob(null);
@@ -196,12 +210,17 @@ export function MediaRecorder({ messageId, onRecordingComplete, maxDuration = 30
       console.log('Using MIME type:', mimeType);
 
       // Create MediaRecorder with fallback options
-      let recorder: MediaRecorder;
+      let recorder: globalThis.MediaRecorder;
       try {
-        recorder = new MediaRecorder(mediaStream, { mimeType });
+        // Check if the MIME type is supported
+        if (globalThis.MediaRecorder.isTypeSupported && globalThis.MediaRecorder.isTypeSupported(mimeType)) {
+          recorder = new globalThis.MediaRecorder(mediaStream, { mimeType });
+        } else {
+          recorder = new globalThis.MediaRecorder(mediaStream);
+        }
       } catch (error) {
         console.warn('Failed to create MediaRecorder with MIME type, using default:', error);
-        recorder = new MediaRecorder(mediaStream);
+        recorder = new globalThis.MediaRecorder(mediaStream);
       }
 
       const chunks: Blob[] = [];
@@ -241,7 +260,7 @@ export function MediaRecorder({ messageId, onRecordingComplete, maxDuration = 30
         });
       };
 
-      setMediaRecorder(recorder);
+      setMediaRecorderInstance(recorder);
       
       try {
         recorder.start(1000); // Collect data every second
@@ -303,7 +322,7 @@ export function MediaRecorder({ messageId, onRecordingComplete, maxDuration = 30
   };
 
   const stopRecording = () => {
-    if (!mediaRecorder || !isRecording) return;
+    if (!mediaRecorderInstance || !isRecording) return;
 
     setIsRecording(false);
     
@@ -313,14 +332,14 @@ export function MediaRecorder({ messageId, onRecordingComplete, maxDuration = 30
     }
 
     try {
-      if (mediaRecorder.state === 'recording') {
-        mediaRecorder.stop();
+      if (mediaRecorderInstance.state === 'recording') {
+        mediaRecorderInstance.stop();
       }
     } catch (error) {
       console.error('Error stopping recording:', error);
     }
     
-    setMediaRecorder(null);
+    setMediaRecorderInstance(null);
 
     toast({
       title: 'Recording Complete',
@@ -435,7 +454,7 @@ export function MediaRecorder({ messageId, onRecordingComplete, maxDuration = 30
   const progressPercentage = (duration / maxDuration) * 100;
 
   // Check if MediaRecorder is supported
-  const isMediaRecorderSupported = typeof MediaRecorder !== 'undefined';
+  const isMediaRecorderSupported = typeof window !== 'undefined' && typeof globalThis.MediaRecorder !== 'undefined';
 
   if (!isMediaRecorderSupported) {
     return (
