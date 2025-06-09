@@ -17,9 +17,12 @@ import {
   X,
   Download,
   Eye,
-  AlertTriangle
+  AlertTriangle,
+  CheckCircle
 } from 'lucide-react';
-import { MediaService } from '@/lib/media-service';
+import { StorageService } from '@/lib/storage-service';
+import { supabase } from '@/lib/supabase';
+import { useAuth } from '@/hooks/use-auth';
 import { useToast } from '@/hooks/use-toast';
 
 interface FileUploaderProps {
@@ -31,10 +34,10 @@ interface FileUploaderProps {
 
 interface UploadingFile {
   file: File;
-  sessionId: string;
   progress: number;
   status: 'uploading' | 'completed' | 'failed';
   error?: string;
+  storagePath?: string;
 }
 
 export function FileUploader({ 
@@ -54,7 +57,8 @@ export function FileUploader({
   const [uploadingFiles, setUploadingFiles] = useState<UploadingFile[]>([]);
   const [dragOver, setDragOver] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const mediaService = MediaService.getInstance();
+  const storageService = StorageService.getInstance();
+  const { user } = useAuth();
   const { toast } = useToast();
 
   const getFileIcon = (mimeType: string) => {
@@ -95,6 +99,15 @@ export function FileUploader({
   };
 
   const handleFileSelect = async (files: FileList) => {
+    if (!user) {
+      toast({
+        title: 'Authentication Required',
+        description: 'Please log in to upload files',
+        variant: 'destructive'
+      });
+      return;
+    }
+
     const validFiles: File[] = [];
     const errors: string[] = [];
 
@@ -122,77 +135,130 @@ export function FileUploader({
   };
 
   const uploadFile = async (file: File) => {
-    try {
-      // Create upload session
-      const sessionId = await mediaService.createFileUploadSession(messageId, file);
-      if (!sessionId) {
-        throw new Error('Failed to create upload session');
-      }
+    if (!user) return;
 
+    try {
       // Add to uploading files
       const uploadingFile: UploadingFile = {
         file,
-        sessionId,
         progress: 0,
         status: 'uploading'
       };
 
       setUploadingFiles(prev => [...prev, uploadingFile]);
+      const fileIndex = uploadingFiles.length;
 
-      // Start upload with progress tracking
-      const success = await mediaService.uploadFile(
-        sessionId,
-        file,
-        (progress) => {
-          setUploadingFiles(prev => 
-            prev.map(uf => 
-              uf.sessionId === sessionId 
-                ? { ...uf, progress }
-                : uf
-            )
-          );
-        }
-      );
+      // Upload to storage
+      const uploadResult = await storageService.uploadAttachment(file, messageId, user.id);
+
+      if (!uploadResult.success) {
+        throw new Error(uploadResult.error || 'Upload failed');
+      }
+
+      // Calculate file hash
+      const fileHash = await storageService.calculateFileHash(file);
+
+      // Save attachment record to database
+      const { error: attachmentError } = await supabase
+        .from('attachments')
+        .insert({
+          message_id: messageId,
+          file_name: file.name,
+          file_type: file.type,
+          file_size: file.size,
+          mime_type: file.type,
+          storage_path: uploadResult.path,
+          file_hash: fileHash,
+          is_encrypted: false,
+          access_level: 'private'
+        });
+
+      if (attachmentError) {
+        console.error('Error saving attachment record:', attachmentError);
+        throw new Error('Failed to save attachment record');
+      }
+
+      // Log the upload activity
+      await supabase
+        .from('activity_logs')
+        .insert({
+          user_id: user.id,
+          action: 'file_uploaded',
+          details: {
+            message_id: messageId,
+            file_name: file.name,
+            file_size: file.size,
+            file_type: file.type,
+            storage_path: uploadResult.path
+          }
+        });
 
       // Update status
       setUploadingFiles(prev => 
-        prev.map(uf => 
-          uf.sessionId === sessionId 
+        prev.map((uf, index) => 
+          index === fileIndex 
             ? { 
                 ...uf, 
-                status: success ? 'completed' : 'failed',
-                error: success ? undefined : 'Upload failed'
+                status: 'completed',
+                progress: 100,
+                storagePath: uploadResult.path
               }
             : uf
         )
       );
 
-      if (success) {
-        onFileUploaded?.(file, `attachments/attachment_${sessionId}_${Date.now()}_${file.name}`);
-        toast({
-          title: 'Upload Complete',
-          description: `${file.name} has been uploaded successfully`,
-          variant: 'default'
-        });
-      } else {
-        toast({
-          title: 'Upload Failed',
-          description: `Failed to upload ${file.name}`,
-          variant: 'destructive'
-        });
-      }
+      onFileUploaded?.(file, uploadResult.path || '');
+      
+      toast({
+        title: 'Upload Complete',
+        description: `${file.name} has been uploaded successfully`,
+        variant: 'default'
+      });
+
     } catch (error) {
       console.error('Upload error:', error);
+      
+      // Update status to failed
+      setUploadingFiles(prev => 
+        prev.map((uf, index) => 
+          index === uploadingFiles.length 
+            ? { 
+                ...uf, 
+                status: 'failed',
+                error: error instanceof Error ? error.message : 'Upload failed'
+              }
+            : uf
+        )
+      );
+
       toast({
-        title: 'Upload Error',
+        title: 'Upload Failed',
         description: error instanceof Error ? error.message : 'Upload failed',
         variant: 'destructive'
       });
     }
   };
 
-  const removeUploadingFile = (sessionId: string) => {
-    setUploadingFiles(prev => prev.filter(uf => uf.sessionId !== sessionId));
+  const removeUploadingFile = async (index: number) => {
+    const file = uploadingFiles[index];
+    
+    // If file was successfully uploaded, delete it from storage
+    if (file.status === 'completed' && file.storagePath && user) {
+      try {
+        await storageService.deleteFile('attachments', file.storagePath);
+        
+        // Remove attachment record
+        await supabase
+          .from('attachments')
+          .delete()
+          .eq('storage_path', file.storagePath)
+          .eq('message_id', messageId);
+      } catch (error) {
+        console.error('Error deleting file:', error);
+      }
+    }
+
+    setUploadingFiles(prev => prev.filter((_, i) => i !== index));
   };
 
   const handleDragOver = (e: React.DragEvent) => {
@@ -274,12 +340,12 @@ export function FileUploader({
 
         {/* Uploading Files */}
         <AnimatePresence>
-          {uploadingFiles.map((uploadingFile) => {
+          {uploadingFiles.map((uploadingFile, index) => {
             const IconComponent = getFileIcon(uploadingFile.file.type);
             
             return (
               <motion.div
-                key={uploadingFile.sessionId}
+                key={`${uploadingFile.file.name}-${index}`}
                 initial={{ opacity: 0, y: 20 }}
                 animate={{ opacity: 1, y: 0 }}
                 exit={{ opacity: 0, y: -20 }}
@@ -308,14 +374,19 @@ export function FileUploader({
                       }
                     >
                       {uploadingFile.status === 'uploading' && `${Math.round(uploadingFile.progress)}%`}
-                      {uploadingFile.status === 'completed' && 'Complete'}
+                      {uploadingFile.status === 'completed' && (
+                        <>
+                          <CheckCircle className="w-3 h-3 mr-1" />
+                          Complete
+                        </>
+                      )}
                       {uploadingFile.status === 'failed' && 'Failed'}
                     </Badge>
                     
                     <Button
                       variant="ghost"
                       size="sm"
-                      onClick={() => removeUploadingFile(uploadingFile.sessionId)}
+                      onClick={() => removeUploadingFile(index)}
                       className="text-slate-400 hover:text-white"
                     >
                       <X className="w-4 h-4" />

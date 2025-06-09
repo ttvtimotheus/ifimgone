@@ -60,6 +60,7 @@ export default function CreateMessage() {
     pin: '',
     attachments: [] as string[],
     recordingBlob: null as Blob | null,
+    recordingPath: null as string | null,
     contentType: 'text' as string,
   });
 
@@ -90,14 +91,29 @@ export default function CreateMessage() {
       ...prev,
       attachments: [...prev.attachments, uploadPath]
     }));
+    
+    toast({
+      title: 'File Uploaded',
+      description: `${file.name} has been added to your message`,
+      variant: 'default'
+    });
   };
 
-  const handleRecordingComplete = (blob: Blob, type: 'audio' | 'video') => {
+  const handleRecordingComplete = (blob: Blob, type: 'audio' | 'video', storagePath?: string) => {
     setFormData(prev => ({
       ...prev,
       recordingBlob: blob,
+      recordingPath: storagePath || null,
       contentType: type
     }));
+
+    if (storagePath) {
+      toast({
+        title: 'Recording Saved',
+        description: `Your ${type} recording has been saved to the message`,
+        variant: 'default'
+      });
+    }
   };
 
   const saveMessage = async () => {
@@ -178,26 +194,51 @@ export default function CreateMessage() {
 
       if (linkError) throw linkError;
 
-      // 4. Handle attachments if any
+      // 4. Handle attachments if any (they should already be uploaded)
       if (formData.attachments.length > 0) {
-        const attachmentPromises = formData.attachments.map(async (attachmentPath) => {
-          return supabase
-            .from('attachments')
-            .insert({
-              message_id: messageData.id,
-              file_name: attachmentPath.split('/').pop() || 'attachment',
-              file_type: 'unknown',
-              file_size: 0,
-              storage_path: attachmentPath
-            });
-        });
+        // Update attachment records to link them to the message
+        const { error: attachmentUpdateError } = await supabase
+          .from('attachments')
+          .update({ message_id: messageData.id })
+          .in('storage_path', formData.attachments);
 
-        await Promise.all(attachmentPromises);
+        if (attachmentUpdateError) {
+          console.error('Error updating attachment records:', attachmentUpdateError);
+        }
       }
+
+      // 5. Handle recording if saved
+      if (formData.recordingPath) {
+        // Update the recording attachment to link it to the message
+        const { error: recordingUpdateError } = await supabase
+          .from('attachments')
+          .update({ message_id: messageData.id })
+          .eq('storage_path', formData.recordingPath);
+
+        if (recordingUpdateError) {
+          console.error('Error updating recording attachment:', recordingUpdateError);
+        }
+      }
+
+      // 6. Log the message creation
+      await supabase
+        .from('activity_logs')
+        .insert({
+          user_id: user.id,
+          action: 'message_created',
+          details: {
+            message_id: messageData.id,
+            recipient_id: recipientData.id,
+            format: formData.format,
+            has_attachments: formData.attachments.length > 0,
+            has_recording: !!formData.recordingPath,
+            trigger_type: formData.triggerType
+          }
+        });
 
       toast({
         title: 'Success',
-        description: 'Your message has been saved',
+        description: 'Your message has been saved successfully',
         variant: 'default'
       });
 
@@ -230,7 +271,11 @@ export default function CreateMessage() {
       case 'format':
         return formData.format;
       case 'content':
-        return formData.title && (formData.content || formData.recordingBlob || formData.attachments.length > 0);
+        return formData.title && (
+          formData.content || 
+          formData.recordingPath || 
+          formData.attachments.length > 0
+        );
       case 'trigger':
         return formData.triggerType && formData.triggerValue;
       case 'security':
@@ -301,7 +346,7 @@ export default function CreateMessage() {
                     {currentStepId === 'recipient' && (
                       <div className="space-y-4">
                         <div>
-                          <Label htmlFor="recipientName\" className="text-slate-300">Recipient Name</Label>
+                          <Label htmlFor="recipientName" className="text-slate-300">Recipient Name</Label>
                           <Input
                             id="recipientName"
                             placeholder="Who is this message for?"
@@ -591,7 +636,7 @@ export default function CreateMessage() {
                               </div>
                             )}
                             
-                            {formData.recordingBlob && (
+                            {formData.recordingPath && (
                               <div className="bg-slate-800 p-4 rounded-lg mb-4">
                                 <p className="text-white">📹 {formData.contentType === 'video' ? 'Video' : 'Audio'} recording attached</p>
                               </div>

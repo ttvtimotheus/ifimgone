@@ -17,13 +17,18 @@ import {
   Volume2,
   VolumeX,
   Settings,
-  AlertTriangle
+  AlertTriangle,
+  Save,
+  CheckCircle
 } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
+import { StorageService } from '@/lib/storage-service';
+import { supabase } from '@/lib/supabase';
+import { useAuth } from '@/hooks/use-auth';
 
 interface MediaRecorderComponentProps {
   messageId: string;
-  onRecordingComplete?: (blob: Blob, type: 'audio' | 'video') => void;
+  onRecordingComplete?: (blob: Blob, type: 'audio' | 'video', storagePath?: string) => void;
   maxDuration?: number; // in seconds
 }
 
@@ -42,15 +47,21 @@ export function MediaRecorder({ messageId, onRecordingComplete, maxDuration = 30
     audio: false,
     video: false
   });
+  const [isSaving, setIsSaving] = useState(false);
+  const [isSaved, setIsSaved] = useState(false);
+  const [storagePath, setStoragePath] = useState<string | null>(null);
   
   const videoRef = useRef<HTMLVideoElement>(null);
   const audioRef = useRef<HTMLAudioElement>(null);
   const intervalRef = useRef<NodeJS.Timeout | null>(null);
   const { toast } = useToast();
+  const { user } = useAuth();
+  const storageService = StorageService.getInstance();
 
   useEffect(() => {
     checkBrowserSupport();
     checkPermissions();
+    initializeStorage();
     
     return () => {
       if (intervalRef.current) {
@@ -61,6 +72,10 @@ export function MediaRecorder({ messageId, onRecordingComplete, maxDuration = 30
       }
     };
   }, []);
+
+  const initializeStorage = async () => {
+    await storageService.initializeStorage();
+  };
 
   const checkBrowserSupport = () => {
     // Check if MediaRecorder is available
@@ -166,6 +181,8 @@ export function MediaRecorder({ messageId, onRecordingComplete, maxDuration = 30
       setDuration(0);
       setRecordedBlob(null);
       setRecordedChunks([]);
+      setIsSaved(false);
+      setStoragePath(null);
 
       let mediaStream: MediaStream;
 
@@ -348,6 +365,93 @@ export function MediaRecorder({ messageId, onRecordingComplete, maxDuration = 30
     });
   };
 
+  const saveRecording = async () => {
+    if (!recordedBlob || !recordingType || !user) {
+      toast({
+        title: 'Save Error',
+        description: 'No recording to save or user not authenticated',
+        variant: 'destructive'
+      });
+      return;
+    }
+
+    setIsSaving(true);
+
+    try {
+      // Upload to Supabase Storage
+      const uploadResult = await storageService.uploadRecording(
+        recordedBlob,
+        recordingType,
+        messageId,
+        user.id
+      );
+
+      if (!uploadResult.success) {
+        throw new Error(uploadResult.error || 'Upload failed');
+      }
+
+      // Save attachment record to database
+      const fileHash = await storageService.calculateFileHash(recordedBlob);
+      const fileName = `${recordingType}_recording_${Date.now()}.${storageService['getFileExtension'](recordedBlob.type, recordingType)}`;
+
+      const { error: attachmentError } = await supabase
+        .from('attachments')
+        .insert({
+          message_id: messageId,
+          file_name: fileName,
+          file_type: recordedBlob.type,
+          file_size: recordedBlob.size,
+          mime_type: recordedBlob.type,
+          storage_path: uploadResult.path,
+          file_hash: fileHash,
+          is_encrypted: false,
+          access_level: 'private'
+        });
+
+      if (attachmentError) {
+        console.error('Error saving attachment record:', attachmentError);
+        // Don't throw here, the file is uploaded successfully
+      }
+
+      // Log the recording activity
+      await supabase
+        .from('activity_logs')
+        .insert({
+          user_id: user.id,
+          action: 'recording_saved',
+          details: {
+            message_id: messageId,
+            recording_type: recordingType,
+            file_size: recordedBlob.size,
+            duration: duration,
+            storage_path: uploadResult.path
+          }
+        });
+
+      setIsSaved(true);
+      setStoragePath(uploadResult.path || null);
+
+      toast({
+        title: 'Recording Saved',
+        description: `Your ${recordingType} recording has been saved to the message`,
+        variant: 'default'
+      });
+
+      // Notify parent component
+      onRecordingComplete?.(recordedBlob, recordingType, uploadResult.path);
+
+    } catch (error) {
+      console.error('Error saving recording:', error);
+      toast({
+        title: 'Save Failed',
+        description: error instanceof Error ? error.message : 'Failed to save recording',
+        variant: 'destructive'
+      });
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
   const playRecording = () => {
     if (!recordedBlob) return;
 
@@ -428,12 +532,30 @@ export function MediaRecorder({ messageId, onRecordingComplete, maxDuration = 30
     });
   };
 
-  const deleteRecording = () => {
+  const deleteRecording = async () => {
+    // If recording is saved to storage, delete it
+    if (storagePath && user) {
+      try {
+        await storageService.deleteFile('message-media', storagePath);
+        
+        // Remove attachment record
+        await supabase
+          .from('attachments')
+          .delete()
+          .eq('storage_path', storagePath)
+          .eq('message_id', messageId);
+      } catch (error) {
+        console.error('Error deleting saved recording:', error);
+      }
+    }
+
     setRecordedBlob(null);
     setDuration(0);
     setIsPlaying(false);
     setRecordingType(null);
     setRecordedChunks([]);
+    setIsSaved(false);
+    setStoragePath(null);
     
     if (audioRef.current) audioRef.current.src = '';
     if (videoRef.current) videoRef.current.src = '';
@@ -449,6 +571,14 @@ export function MediaRecorder({ messageId, onRecordingComplete, maxDuration = 30
     const mins = Math.floor(seconds / 60);
     const secs = seconds % 60;
     return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
+  };
+
+  const formatFileSize = (bytes: number) => {
+    if (bytes === 0) return '0 Bytes';
+    const k = 1024;
+    const sizes = ['Bytes', 'KB', 'MB', 'GB'];
+    const i = Math.floor(Math.log(bytes) / Math.log(k));
+    return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
   };
 
   const progressPercentage = (duration / maxDuration) * 100;
@@ -475,9 +605,17 @@ export function MediaRecorder({ messageId, onRecordingComplete, maxDuration = 30
       <CardHeader>
         <CardTitle className="text-white flex items-center justify-between">
           <span>Record Message</span>
-          <Badge variant="outline" className="border-slate-600 text-slate-300">
-            {formatDuration(duration)} / {formatDuration(maxDuration)}
-          </Badge>
+          <div className="flex items-center space-x-2">
+            <Badge variant="outline" className="border-slate-600 text-slate-300">
+              {formatDuration(duration)} / {formatDuration(maxDuration)}
+            </Badge>
+            {isSaved && (
+              <Badge variant="outline" className="border-green-500 text-green-400">
+                <CheckCircle className="w-3 h-3 mr-1" />
+                Saved
+              </Badge>
+            )}
+          </div>
         </CardTitle>
       </CardHeader>
       <CardContent className="space-y-6">
@@ -593,7 +731,10 @@ export function MediaRecorder({ messageId, onRecordingComplete, maxDuration = 30
                 >
                   {isPlaying ? <Pause className="w-4 h-4" /> : <Play className="w-4 h-4" />}
                 </Button>
-                <span className="text-slate-300 text-sm">Audio Recording</span>
+                <div>
+                  <span className="text-slate-300 text-sm">Audio Recording</span>
+                  <p className="text-slate-500 text-xs">{formatFileSize(recordedBlob.size)}</p>
+                </div>
               </div>
               <Badge variant="outline" className="border-slate-600 text-slate-300">
                 {formatDuration(duration)}
@@ -607,8 +748,28 @@ export function MediaRecorder({ messageId, onRecordingComplete, maxDuration = 30
           <motion.div
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
-            className="flex gap-2 justify-center"
+            className="flex gap-2 justify-center flex-wrap"
           >
+            {!isSaved && (
+              <Button
+                onClick={saveRecording}
+                disabled={isSaving}
+                className="bg-green-500 hover:bg-green-600 text-white font-semibold"
+              >
+                {isSaving ? (
+                  <>
+                    <div className="animate-spin mr-2 h-4 w-4 border-2 border-white rounded-full border-t-transparent"></div>
+                    Saving...
+                  </>
+                ) : (
+                  <>
+                    <Save className="w-4 h-4 mr-2" />
+                    Save to Message
+                  </>
+                )}
+              </Button>
+            )}
+            
             <Button
               variant="outline"
               onClick={downloadRecording}
@@ -617,6 +778,7 @@ export function MediaRecorder({ messageId, onRecordingComplete, maxDuration = 30
               <Download className="w-4 h-4 mr-2" />
               Download
             </Button>
+            
             <Button
               variant="outline"
               onClick={deleteRecording}
@@ -625,6 +787,7 @@ export function MediaRecorder({ messageId, onRecordingComplete, maxDuration = 30
               <Trash2 className="w-4 h-4 mr-2" />
               Delete
             </Button>
+            
             <Button
               onClick={() => startRecording(recordingType!)}
               className="bg-amber-500 hover:bg-amber-600 text-slate-950 font-semibold"
@@ -641,6 +804,9 @@ export function MediaRecorder({ messageId, onRecordingComplete, maxDuration = 30
             <p>Supported formats: {supportedMimeTypes.slice(0, 2).join(', ')}</p>
           )}
           <p>Make sure to allow microphone and camera permissions when prompted</p>
+          {recordedBlob && !isSaved && (
+            <p className="text-yellow-400">⚠️ Don't forget to save your recording to the message!</p>
+          )}
         </div>
       </CardContent>
     </Card>
