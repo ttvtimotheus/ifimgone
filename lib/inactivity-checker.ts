@@ -211,8 +211,9 @@ export class InactivityChecker {
       for (const message of messages) {
         for (const messageRecipient of message.message_recipients) {
           const recipientEmail = messageRecipient.recipients.email;
+          const recipientName = messageRecipient.recipients.name;
           
-          const success = await this.emailService.sendMessage(message.id, recipientEmail);
+          const success = await this.emailService.sendMessage(message.id, recipientEmail, recipientName);
           
           if (success) {
             console.log(`Delivered message ${message.id} to ${recipientEmail}`);
@@ -269,8 +270,9 @@ export class InactivityChecker {
       for (const message of messages) {
         for (const messageRecipient of message.message_recipients) {
           const recipientEmail = messageRecipient.recipients.email;
+          const recipientName = messageRecipient.recipients.name;
           
-          const success = await this.emailService.sendMessage(message.id, recipientEmail);
+          const success = await this.emailService.sendMessage(message.id, recipientEmail, recipientName);
           
           if (success) {
             console.log(`Delivered date-triggered message ${message.id} to ${recipientEmail}`);
