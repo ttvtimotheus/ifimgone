@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, Suspense } from 'react';
 import { motion } from 'framer-motion';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -9,7 +9,7 @@ import { CheckCircle, AlertTriangle, Heart, Loader2, UserCheck } from 'lucide-re
 import { useSearchParams } from 'next/navigation';
 import { TrustedContactService } from '@/lib/trusted-contact-service';
 
-export default function VerifyContactPage() {
+function VerifyContactContent() {
   const [status, setStatus] = useState<'loading' | 'success' | 'error' | 'invalid'>('loading');
   const [message, setMessage] = useState('');
   const searchParams = useSearchParams();
@@ -152,5 +152,20 @@ export default function VerifyContactPage() {
         </Card>
       </motion.div>
     </div>
+  );
+}
+
+export default function VerifyContactPage() {
+  return (
+    <Suspense fallback={
+      <div className="min-h-screen bg-slate-950 flex items-center justify-center p-4">
+        <div className="w-full max-w-md text-center">
+          <Loader2 className="w-16 h-16 text-amber-500 animate-spin mx-auto" />
+          <p className="text-slate-400 mt-4">Loading verification...</p>
+        </div>
+      </div>
+    }>
+      <VerifyContactContent />
+    </Suspense>
   );
 }

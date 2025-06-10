@@ -1,5 +1,4 @@
 import { supabase } from './supabase';
-import { sql } from '@supabase/supabase-js';
 
 export interface RecordingSession {
   id: string;
@@ -193,9 +192,17 @@ export class MediaService {
   async useTemplate(templateId: string, variables: Record<string, string>): Promise<string> {
     try {
       // Increment usage count
+      // First get the current usage count
+      const { data: currentTemplate } = await supabase
+        .from('message_templates')
+        .select('usage_count')
+        .eq('id', templateId)
+        .single();
+      
+      // Then increment it
       await supabase
         .from('message_templates')
-        .update({ usage_count: sql`usage_count + 1` })
+        .update({ usage_count: (currentTemplate?.usage_count || 0) + 1 })
         .eq('id', templateId);
 
       // Get template
