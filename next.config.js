@@ -20,6 +20,11 @@ const nextConfig = {
   typescript: {
     ignoreBuildErrors: true,
   },
+  // Skip trailing slash redirect and middleware URL normalize
+  skipTrailingSlashRedirect: true,
+  skipMiddlewareUrlNormalize: true,
+  // Disable static page generation
+  staticPageGenerationTimeout: 1000,
 };
 
 module.exports = nextConfig;
