@@ -23,8 +23,12 @@ const nextConfig = {
   // Skip trailing slash redirect and middleware URL normalize
   skipTrailingSlashRedirect: true,
   skipMiddlewareUrlNormalize: true,
-  // Disable static page generation
-  staticPageGenerationTimeout: 1000,
+  // Force dynamic rendering for all pages
+  // This prevents static generation errors with client components using searchParams
+  experimental: {
+    // Disable static generation completely
+    isrMemoryCacheSize: 0,
+  },
 };
 
 module.exports = nextConfig;
