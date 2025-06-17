@@ -28,7 +28,7 @@ import {
 } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { StorageService } from '@/lib/storage-service';
-import { supabase } from '@/lib/supabase';
+import { useSupabaseClient } from '@supabase/auth-helpers-react';
 import { useAuth } from '@/hooks/use-auth';
 
 interface MediaRecorderComponentProps {
@@ -72,7 +72,8 @@ export function MediaRecorder({ messageId, onRecordingComplete, maxDuration = 30
   const intervalRef = useRef<NodeJS.Timeout | null>(null);
   const { toast } = useToast();
   const { user } = useAuth();
-  const storageService = StorageService.getInstance();
+  const supabaseClient = useSupabaseClient();
+  const storageService = new StorageService(supabaseClient);
 
   useEffect(() => {
     checkBrowserSupport();
@@ -449,7 +450,7 @@ export function MediaRecorder({ messageId, onRecordingComplete, maxDuration = 30
       const fileHash = await storageService.calculateFileHash(recordedBlob);
       const fileName = `${recordingType}_recording_${Date.now()}.${storageService['getFileExtension'](recordedBlob.type, recordingType)}`;
 
-      const { error: attachmentError } = await supabase
+      const { error: attachmentError } = await supabaseClient
         .from('attachments')
         .insert({
           message_id: messageId,
@@ -469,7 +470,7 @@ export function MediaRecorder({ messageId, onRecordingComplete, maxDuration = 30
       }
 
       // Log the recording activity
-      await supabase
+      await supabaseClient
         .from('activity_logs')
         .insert({
           user_id: user.id,
@@ -606,7 +607,7 @@ export function MediaRecorder({ messageId, onRecordingComplete, maxDuration = 30
         await storageService.deleteFile('message-media', storagePath);
         
         // Remove attachment record
-        await supabase
+        await supabaseClient
           .from('attachments')
           .delete()
           .eq('storage_path', storagePath)

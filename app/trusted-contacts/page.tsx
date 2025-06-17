@@ -36,6 +36,7 @@ import { ProtectedRoute } from '@/components/protected-route';
 import { Navigation } from '@/components/navigation';
 import { TrustedContactService, TrustedContact, ContactVerificationRequest } from '@/lib/trusted-contact-service';
 import { useAuth } from '@/hooks/use-auth';
+import { useSupabaseClient } from '@supabase/auth-helpers-react';
 import { useToast } from '@/hooks/use-toast';
 
 export default function TrustedContactsPage() {
@@ -72,8 +73,9 @@ export default function TrustedContactsPage() {
   });
 
   const { user } = useAuth();
+  const supabase = useSupabaseClient();
   const { toast } = useToast();
-  const trustedContactService = TrustedContactService.getInstance();
+  const trustedContactService = new TrustedContactService(supabase);
 
   useEffect(() => {
     if (user) {

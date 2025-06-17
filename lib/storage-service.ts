@@ -1,4 +1,4 @@
-import { supabase } from './supabase';
+import { SupabaseClient } from '@supabase/supabase-js';
 
 export interface StorageUploadResult {
   success: boolean;
@@ -8,17 +8,14 @@ export interface StorageUploadResult {
 }
 
 export class StorageService {
-  private static instance: StorageService;
+  private supabase: SupabaseClient;
   private bucketsInitialized = false;
   private initializationPromise: Promise<void> | null = null;
   private initializationAttempts = 0;
   private maxInitializationAttempts = 3;
 
-  public static getInstance(): StorageService {
-    if (!StorageService.instance) {
-      StorageService.instance = new StorageService();
-    }
-    return StorageService.instance;
+  constructor(supabaseClient: SupabaseClient) {
+    this.supabase = supabaseClient;
   }
 
   // Create storage buckets if they don't exist
@@ -37,14 +34,12 @@ export class StorageService {
 
     // Check if we've exceeded max attempts
     if (this.initializationAttempts >= this.maxInitializationAttempts) {
-      console.log('⚠️ Max storage initialization attempts reached, marking as initialized');
+      console.log('⚠️ Max storage initialization attempts reached, skipping further attempts');
       this.bucketsInitialized = true;
       return;
     }
 
-    // Start initialization
     this.initializationAttempts++;
-    console.log(`🔧 Starting storage initialization attempt ${this.initializationAttempts}/${this.maxInitializationAttempts}...`);
     
     this.initializationPromise = this.performInitialization();
     
@@ -76,7 +71,7 @@ export class StorageService {
         }, 3000); // 3 second timeout
         
         // Try to get bucket info for a known bucket
-        supabase.storage.getBucket('message-media')
+        this.supabase.storage.getBucket('message-media')
           .then((result) => {
             clearTimeout(timeoutId);
             console.log('📦 Storage responded:', result.error ? 'with error' : 'successfully');
@@ -142,7 +137,7 @@ export class StorageService {
       });
 
       // Upload to Supabase Storage with timeout
-      const uploadPromise = supabase.storage
+      const uploadPromise = this.supabase.storage
         .from('message-media')
         .upload(filePath, blob, {
           contentType: blob.type,
@@ -238,7 +233,7 @@ export class StorageService {
       });
 
       // Upload with timeout
-      const uploadPromise = supabase.storage
+      const uploadPromise = this.supabase.storage
         .from('attachments')
         .upload(filePath, file, {
           contentType: file.type,
@@ -332,7 +327,7 @@ export class StorageService {
         userId
       });
 
-      const { data, error } = await supabase.storage
+      const { data, error } = await this.supabase.storage
         .from('avatars')
         .upload(filePath, file, {
           contentType: file.type,
@@ -348,7 +343,7 @@ export class StorageService {
       }
 
       // Get public URL for avatars (since bucket is public)
-      const { data: urlData } = supabase.storage
+      const { data: urlData } = this.supabase.storage
         .from('avatars')
         .getPublicUrl(filePath);
 
@@ -371,7 +366,7 @@ export class StorageService {
   // Get signed URL for private files
   async getSignedUrl(bucket: string, path: string, expiresIn: number = 3600): Promise<string | null> {
     try {
-      const { data, error } = await supabase.storage
+      const { data, error } = await this.supabase.storage
         .from(bucket)
         .createSignedUrl(path, expiresIn);
 
@@ -390,7 +385,7 @@ export class StorageService {
   // Delete file from storage
   async deleteFile(bucket: string, path: string): Promise<boolean> {
     try {
-      const { error } = await supabase.storage
+      const { error } = await this.supabase.storage
         .from(bucket)
         .remove([path]);
 
@@ -440,7 +435,7 @@ export class StorageService {
   // Check if bucket exists
   async bucketExists(bucketName: string): Promise<boolean> {
     try {
-      const { data, error } = await supabase.storage.getBucket(bucketName);
+      const { data, error } = await this.supabase.storage.getBucket(bucketName);
       return !error && !!data;
     } catch (error) {
       return false;
@@ -450,7 +445,7 @@ export class StorageService {
   // Get bucket info
   async getBucketInfo(bucketName: string) {
     try {
-      const { data, error } = await supabase.storage.getBucket(bucketName);
+      const { data, error } = await this.supabase.storage.getBucket(bucketName);
       if (error) {
         console.error(`❌ Error getting bucket info for ${bucketName}:`, error);
         return null;

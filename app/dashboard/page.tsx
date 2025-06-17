@@ -11,7 +11,7 @@ import { useAuth } from '@/hooks/use-auth';
 import { ProtectedRoute } from '@/components/protected-route';
 import { Navigation } from '@/components/navigation';
 import { ProfileCompletionWidget } from '@/components/profile-completion-widget';
-import { supabase } from '@/lib/supabase';
+import { useSupabaseClient } from '@supabase/auth-helpers-react';
 import { useToast } from '@/hooks/use-toast';
 
 // Define types for our data
@@ -34,6 +34,7 @@ type Message = {
 export default function Dashboard() {
   const { user } = useAuth();
   const { toast } = useToast();
+  const supabase = useSupabaseClient();
   const [messages, setMessages] = useState<Message[]>([]);
   const [loading, setLoading] = useState(true);
   const [trustedContacts, setTrustedContacts] = useState(0);

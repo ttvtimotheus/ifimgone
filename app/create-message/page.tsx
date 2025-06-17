@@ -16,7 +16,7 @@ import { Navigation } from '@/components/navigation';
 import { MediaRecorder } from '@/components/media-recorder';
 import { FileUploader } from '@/components/file-uploader';
 import { MessageTemplates } from '@/components/message-templates';
-import { supabase } from '@/lib/supabase';
+import { useSupabaseClient } from '@supabase/auth-helpers-react';
 import { useAuth } from '@/hooks/use-auth';
 import { useToast } from '@/hooks/use-toast';
 
@@ -47,6 +47,7 @@ export default function CreateMessage() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const { user } = useAuth();
   const { toast } = useToast();
+  const supabase = useSupabaseClient();
   const [formData, setFormData] = useState({
     recipientName: '',
     recipientEmail: '',

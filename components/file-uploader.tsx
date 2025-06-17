@@ -21,7 +21,7 @@ import {
   CheckCircle
 } from 'lucide-react';
 import { StorageService } from '@/lib/storage-service';
-import { supabase } from '@/lib/supabase';
+import { useSupabaseClient } from '@supabase/auth-helpers-react';
 import { useAuth } from '@/hooks/use-auth';
 import { useToast } from '@/hooks/use-toast';
 
@@ -57,9 +57,10 @@ export function FileUploader({
   const [uploadingFiles, setUploadingFiles] = useState<UploadingFile[]>([]);
   const [dragOver, setDragOver] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const storageService = StorageService.getInstance();
   const { user } = useAuth();
   const { toast } = useToast();
+  const supabase = useSupabaseClient();
+  const storageService = new StorageService(supabase);
 
   const getFileIcon = (mimeType: string) => {
     if (mimeType.startsWith('image/')) return Image;

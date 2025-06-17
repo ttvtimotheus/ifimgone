@@ -1,4 +1,4 @@
-import { supabase } from './supabase';
+import { SupabaseClient } from '@supabase/supabase-js';
 
 export interface TrustedContact {
   id: string;
@@ -18,6 +18,13 @@ export interface TrustedContact {
   updated_at: string;
 }
 
+export interface ContactPermissions {
+  can_verify_inactivity: boolean;
+  can_release_messages: boolean;
+  can_manage_account: boolean;
+  emergency_contact: boolean;
+}
+
 export interface ContactVerificationRequest {
   id: string;
   contact_id: string;
@@ -28,13 +35,6 @@ export interface ContactVerificationRequest {
   created_at: string;
   verified_at?: string;
   expires_at: string;
-}
-
-export interface ContactPermissions {
-  can_verify_inactivity: boolean;
-  can_release_messages: boolean;
-  can_manage_account: boolean;
-  emergency_contact: boolean;
 }
 
 export interface InactivityVerificationRequest {
@@ -49,13 +49,10 @@ export interface InactivityVerificationRequest {
 }
 
 export class TrustedContactService {
-  private static instance: TrustedContactService;
+  private supabase: SupabaseClient;
 
-  public static getInstance(): TrustedContactService {
-    if (!TrustedContactService.instance) {
-      TrustedContactService.instance = new TrustedContactService();
-    }
-    return TrustedContactService.instance;
+  constructor(supabaseClient: SupabaseClient) {
+    this.supabase = supabaseClient;
   }
 
   // Trusted Contact Management
@@ -74,7 +71,7 @@ export class TrustedContactService {
   ): Promise<string | null> {
     try {
       // Check if contact already exists
-      const { data: existingContact, error: checkError } = await supabase
+      const { data: existingContact, error: checkError } = await this.supabase
         .from('trusted_contacts')
         .select('id')
         .eq('user_id', userId)
@@ -87,8 +84,8 @@ export class TrustedContactService {
 
       // Generate verification token
       const verificationToken = this.generateVerificationToken();
-
-      const { data, error } = await supabase
+      
+      const { data, error } = await this.supabase
         .from('trusted_contacts')
         .insert({
           user_id: userId,
@@ -96,10 +93,7 @@ export class TrustedContactService {
           email,
           phone,
           relationship,
-          can_verify_inactivity: permissions.can_verify_inactivity,
-          can_release_messages: permissions.can_release_messages,
-          can_manage_account: permissions.can_manage_account,
-          emergency_contact: permissions.emergency_contact,
+          ...permissions,
           verification_status: 'unverified',
           verification_token: verificationToken
         })
@@ -109,7 +103,7 @@ export class TrustedContactService {
       if (error) throw error;
 
       // Log the activity
-      await supabase
+      await this.supabase
         .from('activity_logs')
         .insert({
           user_id: userId,
@@ -153,7 +147,7 @@ export class TrustedContactService {
         updateData.emergency_contact = permissions.emergency_contact;
       }
 
-      const { error } = await supabase
+      const { error } = await this.supabase
         .from('trusted_contacts')
         .update(updateData)
         .eq('id', contactId);
@@ -161,14 +155,14 @@ export class TrustedContactService {
       if (error) throw error;
 
       // Log the activity
-      const { data: contact } = await supabase
+      const { data: contact } = await this.supabase
         .from('trusted_contacts')
         .select('user_id')
         .eq('id', contactId)
         .single();
 
       if (contact) {
-        await supabase
+        await this.supabase
           .from('activity_logs')
           .insert({
             user_id: contact.user_id,
@@ -190,13 +184,13 @@ export class TrustedContactService {
   async removeTrustedContact(contactId: string): Promise<boolean> {
     try {
       // Get contact info for logging
-      const { data: contact } = await supabase
+      const { data: contact } = await this.supabase
         .from('trusted_contacts')
         .select('user_id, name, email')
         .eq('id', contactId)
         .single();
 
-      const { error } = await supabase
+      const { error } = await this.supabase
         .from('trusted_contacts')
         .delete()
         .eq('id', contactId);
@@ -205,7 +199,7 @@ export class TrustedContactService {
 
       // Log the activity
       if (contact) {
-        await supabase
+        await this.supabase
           .from('activity_logs')
           .insert({
             user_id: contact.user_id,
@@ -227,7 +221,7 @@ export class TrustedContactService {
 
   async getTrustedContacts(userId: string): Promise<TrustedContact[]> {
     try {
-      const { data, error } = await supabase
+      const { data, error } = await this.supabase
         .from('trusted_contacts')
         .select('*')
         .eq('user_id', userId)
@@ -245,7 +239,7 @@ export class TrustedContactService {
   async sendVerificationRequest(contactId: string): Promise<boolean> {
     try {
       // Get contact details
-      const { data: contact, error: contactError } = await supabase
+      const { data: contact, error: contactError } = await this.supabase
         .from('trusted_contacts')
         .select('*')
         .eq('id', contactId)
@@ -260,7 +254,7 @@ export class TrustedContactService {
       const expiresAt = new Date();
       expiresAt.setDate(expiresAt.getDate() + 7); // 7 days to verify
 
-      const { data: verification, error: verificationError } = await supabase
+      const { data: verification, error: verificationError } = await this.supabase
         .from('contact_verification_requests')
         .insert({
           contact_id: contactId,
@@ -276,7 +270,7 @@ export class TrustedContactService {
       if (verificationError) throw verificationError;
 
       // Update contact status
-      await supabase
+      await this.supabase
         .from('trusted_contacts')
         .update({
           verification_status: 'pending',
@@ -287,7 +281,7 @@ export class TrustedContactService {
       // Send verification email (using edge function)
       const verificationLink = `${process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'}/verify-contact?token=${verificationToken}`;
       
-      const { error: emailError } = await supabase.functions.invoke('send-verification-email', {
+      const { error: emailError } = await this.supabase.functions.invoke('send-verification-email', {
         body: {
           to: contact.email,
           contactName: contact.name,
@@ -302,7 +296,7 @@ export class TrustedContactService {
       }
 
       // Log the activity
-      await supabase
+      await this.supabase
         .from('activity_logs')
         .insert({
           user_id: contact.user_id,
@@ -324,7 +318,7 @@ export class TrustedContactService {
   async verifyContact(verificationToken: string): Promise<boolean> {
     try {
       // Find verification request
-      const { data: verification, error: verificationError } = await supabase
+      const { data: verification, error: verificationError } = await this.supabase
         .from('contact_verification_requests')
         .select('*')
         .eq('verification_token', verificationToken)
@@ -337,7 +331,7 @@ export class TrustedContactService {
 
       // Check if expired
       if (new Date() > new Date(verification.expires_at)) {
-        await supabase
+        await this.supabase
           .from('contact_verification_requests')
           .update({ status: 'expired' })
           .eq('id', verification.id);
@@ -346,7 +340,7 @@ export class TrustedContactService {
       }
 
       // Update verification request
-      await supabase
+      await this.supabase
         .from('contact_verification_requests')
         .update({
           status: 'verified',
@@ -355,7 +349,7 @@ export class TrustedContactService {
         .eq('id', verification.id);
 
       // Update contact
-      await supabase
+      await this.supabase
         .from('trusted_contacts')
         .update({
           verification_status: 'verified',
@@ -364,14 +358,14 @@ export class TrustedContactService {
         .eq('id', verification.contact_id);
 
       // Log the activity
-      const { data: contact } = await supabase
+      const { data: contact } = await this.supabase
         .from('trusted_contacts')
         .select('user_id')
         .eq('id', verification.contact_id)
         .single();
 
       if (contact) {
-        await supabase
+        await this.supabase
           .from('activity_logs')
           .insert({
             user_id: contact.user_id,
@@ -392,7 +386,7 @@ export class TrustedContactService {
 
   async getVerificationRequests(userId: string): Promise<ContactVerificationRequest[]> {
     try {
-      const { data, error } = await supabase
+      const { data, error } = await this.supabase
         .from('contact_verification_requests')
         .select(`
           *,
@@ -416,7 +410,7 @@ export class TrustedContactService {
   ): Promise<boolean> {
     try {
       // Get verified contacts who can verify inactivity
-      const { data: contacts, error: contactsError } = await supabase
+      const { data: contacts, error: contactsError } = await this.supabase
         .from('trusted_contacts')
         .select('*')
         .eq('user_id', userId)
@@ -434,7 +428,7 @@ export class TrustedContactService {
 
       // Create verification requests for all eligible contacts
       const verificationPromises = contacts.map(contact => 
-        supabase
+        this.supabase
           .from('inactivity_verification_requests')
           .insert({
             user_id: userId,
@@ -449,7 +443,7 @@ export class TrustedContactService {
 
       // Send notification emails to contacts
       const emailPromises = contacts.map(contact => 
-        supabase.functions.invoke('send-inactivity-verification', {
+        this.supabase.functions.invoke('send-inactivity-verification', {
           body: {
             to: contact.email,
             contactName: contact.name,
@@ -463,7 +457,7 @@ export class TrustedContactService {
       await Promise.all(emailPromises);
 
       // Log the activity
-      await supabase
+      await this.supabase
         .from('activity_logs')
         .insert({
           user_id: userId,
@@ -487,7 +481,7 @@ export class TrustedContactService {
     notes?: string
   ): Promise<boolean> {
     try {
-      const { error } = await supabase
+      const { error } = await this.supabase
         .from('inactivity_verification_requests')
         .update({
           status: response,
@@ -499,14 +493,14 @@ export class TrustedContactService {
       if (error) throw error;
 
       // Log the activity
-      const { data: request } = await supabase
+      const { data: request } = await this.supabase
         .from('inactivity_verification_requests')
         .select('user_id, contact_id')
         .eq('id', requestId)
         .single();
 
       if (request) {
-        await supabase
+        await this.supabase
           .from('activity_logs')
           .insert({
             user_id: request.user_id,
@@ -535,7 +529,7 @@ export class TrustedContactService {
   ): Promise<boolean> {
     try {
       // Verify contact has permission
-      const { data: contact, error: contactError } = await supabase
+      const { data: contact, error: contactError } = await this.supabase
         .from('trusted_contacts')
         .select('*')
         .eq('id', contactId)
@@ -548,7 +542,7 @@ export class TrustedContactService {
       }
 
       // Create release request
-      const { data: releaseRequest, error: releaseError } = await supabase
+      const { data: releaseRequest, error: releaseError } = await this.supabase
         .from('message_release_requests')
         .insert({
           user_id: contact.user_id,
@@ -563,7 +557,7 @@ export class TrustedContactService {
       if (releaseError) throw releaseError;
 
       // Send notification email to contact
-      await supabase.functions.invoke('send-message-release-request', {
+      await this.supabase.functions.invoke('send-message-release-request', {
         body: {
           to: contact.email,
           contactName: contact.name,
@@ -574,7 +568,7 @@ export class TrustedContactService {
       });
 
       // Log the activity
-      await supabase
+      await this.supabase
         .from('activity_logs')
         .insert({
           user_id: contact.user_id,
@@ -603,7 +597,7 @@ export class TrustedContactService {
 
   async getContactByEmail(email: string): Promise<TrustedContact | null> {
     try {
-      const { data, error } = await supabase
+      const { data, error } = await this.supabase
         .from('trusted_contacts')
         .select('*')
         .eq('email', email)
@@ -619,7 +613,7 @@ export class TrustedContactService {
 
   async getEmergencyContacts(userId: string): Promise<TrustedContact[]> {
     try {
-      const { data, error } = await supabase
+      const { data, error } = await this.supabase
         .from('trusted_contacts')
         .select('*')
         .eq('user_id', userId)
@@ -650,7 +644,7 @@ export class TrustedContactService {
 
       // Send notifications to all emergency contacts
       const notificationPromises = emergencyContacts.map(contact =>
-        supabase.functions.invoke('send-emergency-notification', {
+        this.supabase.functions.invoke('send-emergency-notification', {
           body: {
             to: contact.email,
             contactName: contact.name,
@@ -664,7 +658,7 @@ export class TrustedContactService {
       await Promise.all(notificationPromises);
 
       // Log the activity
-      await supabase
+      await this.supabase
         .from('activity_logs')
         .insert({
           user_id: userId,
