@@ -77,33 +77,46 @@ export default function TrustedContactsPage() {
   const { toast } = useToast();
   const trustedContactService = new TrustedContactService(supabase);
 
-  useEffect(() => {
-    if (user) {
-      fetchData();
+  const loadTrustedContacts = async () => {
+    if (!user) {
+      console.log('🔧 TrustedContacts: No user, skipping fetch');
+      setLoading(false);
+      return;
     }
-  }, [user]);
 
-  const fetchData = async () => {
+    console.log('🔧 TrustedContacts: Starting fetch for user:', user.id);
+    setLoading(true);
+    
     try {
-      setLoading(true);
+      console.log('🔧 TrustedContacts: Service created, fetching contacts...');
+      
       const [contactsData, verificationsData] = await Promise.all([
-        trustedContactService.getTrustedContacts(user!.id),
-        trustedContactService.getVerificationRequests(user!.id)
+        trustedContactService.getTrustedContacts(user.id),
+        trustedContactService.getVerificationRequests(user.id)
       ]);
+      
+      console.log('🔧 TrustedContacts: Fetch completed:', {
+        contactsCount: contactsData.length,
+        contacts: contactsData
+      });
       
       setContacts(contactsData);
       setVerificationRequests(verificationsData);
     } catch (error) {
-      console.error('Error fetching trusted contacts:', error);
+      console.error('🔧 TrustedContacts: Error fetching contacts:', error);
       toast({
         title: 'Error',
         description: 'Failed to load trusted contacts',
-        variant: 'destructive'
+        variant: 'destructive',
       });
     } finally {
       setLoading(false);
     }
   };
+
+  useEffect(() => {
+    loadTrustedContacts();
+  }, [user, supabase, toast]);
 
   const handleAddContact = async () => {
     try {
@@ -151,7 +164,7 @@ export default function TrustedContactsPage() {
         setShowAddDialog(false);
 
         // Refresh data
-        await fetchData();
+        loadTrustedContacts();
       }
     } catch (error) {
       console.error('Error adding contact:', error);
@@ -190,7 +203,7 @@ export default function TrustedContactsPage() {
 
         setShowEditDialog(false);
         setSelectedContact(null);
-        await fetchData();
+        loadTrustedContacts();
       }
     } catch (error) {
       console.error('Error updating contact:', error);
@@ -212,7 +225,7 @@ export default function TrustedContactsPage() {
           description: 'Trusted contact has been removed',
           variant: 'default'
         });
-        await fetchData();
+        loadTrustedContacts();
       }
     } catch (error) {
       console.error('Error deleting contact:', error);
@@ -234,7 +247,7 @@ export default function TrustedContactsPage() {
           description: 'Verification request has been sent to the contact',
           variant: 'default'
         });
-        await fetchData();
+        loadTrustedContacts();
       }
     } catch (error) {
       console.error('Error sending verification:', error);

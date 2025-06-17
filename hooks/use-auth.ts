@@ -19,32 +19,49 @@ interface AuthContextType {
 }
 
 export function useAuth() {
+  const supabaseClient = useSupabaseClient();
+  const session = useSessionContext();
+  const userFromSession = useUser();
+
+  console.log('🔧 useAuth Debug:', {
+    hasSupabaseClient: !!supabaseClient,
+    sessionStatus: session?.isLoading ? 'loading' : 'loaded',
+    hasSession: !!session?.session,
+    hasUser: !!userFromSession,
+    userId: userFromSession?.id,
+    userEmail: userFromSession?.email,
+    isAnonymous: userFromSession?.user_metadata?.is_anonymous
+  });
+
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
   const [twoFactorEnabled, setTwoFactorEnabled] = useState(false);
   const router = useRouter();
   const securityService = SecurityService.getInstance();
-  const supabaseClient = useSupabaseClient();
-  const session = useSessionContext();
-  const userFromSession = useUser();
 
   useEffect(() => {
-    // Get initial session
-    const getSession = async () => {
-      setUser(userFromSession ?? null);
-      
-      if (userFromSession) {
-        await checkTwoFactorStatus(userFromSession.id);
-      }
-      
+    console.log('🔧 Auth Effect - Session Loading State:', session?.isLoading);
+    if (!session?.isLoading) {
       setLoading(false);
-    };
+      console.log('🔧 Auth Effect - Session Loaded:', {
+        hasSession: !!session?.session,
+        user: session?.session?.user?.email || 'No user'
+      });
+    }
+  }, [session?.isLoading]);
 
-    getSession();
-
-    // Listen for auth changes
+  useEffect(() => {
+    console.log('🔧 Setting up auth state change listener');
     const { data: { subscription } } = supabaseClient.auth.onAuthStateChange(
       async (event, session) => {
+        console.log('🔧 Auth State Change:', {
+          event,
+          hasSession: !!session,
+          userId: session?.user?.id,
+          userEmail: session?.user?.email,
+          pathname: window.location.pathname
+        });
+
         setUser(session?.user ?? null);
         setLoading(false);
         
@@ -96,7 +113,10 @@ export function useAuth() {
       }
     );
 
-    return () => subscription.unsubscribe();
+    return () => {
+      console.log('🔧 Cleaning up auth state listener');
+      subscription.unsubscribe();
+    };
   }, [router, userFromSession]);
 
   // Check 2FA status from database

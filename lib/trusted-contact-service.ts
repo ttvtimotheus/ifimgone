@@ -53,6 +53,7 @@ export class TrustedContactService {
 
   constructor(supabaseClient: SupabaseClient) {
     this.supabase = supabaseClient;
+    console.log('🔧 TrustedContactService: Initialized with supabase client:', !!supabaseClient);
   }
 
   // Trusted Contact Management
@@ -69,6 +70,8 @@ export class TrustedContactService {
       emergency_contact: false
     }
   ): Promise<string | null> {
+    console.log('🔧 TrustedContactService: Adding trusted contact for user:', userId);
+    
     try {
       // Check if contact already exists
       const { data: existingContact, error: checkError } = await this.supabase
@@ -77,6 +80,14 @@ export class TrustedContactService {
         .eq('user_id', userId)
         .eq('email', email)
         .single();
+
+      console.log('🔧 TrustedContactService: addTrustedContact check result:', {
+        success: !checkError,
+        error: checkError?.message,
+        existingContact: !!existingContact,
+        userId,
+        email
+      });
 
       if (existingContact) {
         throw new Error('Contact with this email already exists');
@@ -100,6 +111,12 @@ export class TrustedContactService {
         .select()
         .single();
 
+      console.log('🔧 TrustedContactService: addTrustedContact result:', {
+        success: !error,
+        error: error?.message,
+        data: data
+      });
+
       if (error) throw error;
 
       // Log the activity
@@ -118,7 +135,7 @@ export class TrustedContactService {
 
       return data.id;
     } catch (error) {
-      console.error('Error adding trusted contact:', error);
+      console.error('🔧 TrustedContactService: Error adding trusted contact:', error);
       return null;
     }
   }
@@ -131,6 +148,8 @@ export class TrustedContactService {
     relationship?: string,
     permissions?: ContactPermissions
   ): Promise<boolean> {
+    console.log('🔧 TrustedContactService: Updating trusted contact:', contactId);
+    
     try {
       const updateData: any = {
         name,
@@ -151,6 +170,12 @@ export class TrustedContactService {
         .from('trusted_contacts')
         .update(updateData)
         .eq('id', contactId);
+
+      console.log('🔧 TrustedContactService: updateTrustedContact result:', {
+        success: !error,
+        error: error?.message,
+        contactId
+      });
 
       if (error) throw error;
 
@@ -176,12 +201,14 @@ export class TrustedContactService {
 
       return true;
     } catch (error) {
-      console.error('Error updating trusted contact:', error);
+      console.error('🔧 TrustedContactService: Error updating trusted contact:', error);
       return false;
     }
   }
 
   async removeTrustedContact(contactId: string): Promise<boolean> {
+    console.log('🔧 TrustedContactService: Removing trusted contact:', contactId);
+    
     try {
       // Get contact info for logging
       const { data: contact } = await this.supabase
@@ -194,6 +221,12 @@ export class TrustedContactService {
         .from('trusted_contacts')
         .delete()
         .eq('id', contactId);
+
+      console.log('🔧 TrustedContactService: removeTrustedContact result:', {
+        success: !error,
+        error: error?.message,
+        contactId
+      });
 
       if (error) throw error;
 
@@ -214,12 +247,14 @@ export class TrustedContactService {
 
       return true;
     } catch (error) {
-      console.error('Error removing trusted contact:', error);
+      console.error('🔧 TrustedContactService: Error removing trusted contact:', error);
       return false;
     }
   }
 
   async getTrustedContacts(userId: string): Promise<TrustedContact[]> {
+    console.log('🔧 TrustedContactService: Getting trusted contacts for user:', userId);
+    
     try {
       const { data, error } = await this.supabase
         .from('trusted_contacts')
@@ -227,16 +262,30 @@ export class TrustedContactService {
         .eq('user_id', userId)
         .order('created_at', { ascending: false });
 
-      if (error) throw error;
+      console.log('🔧 TrustedContactService: getTrustedContacts result:', {
+        success: !error,
+        error: error?.message,
+        dataCount: data?.length || 0,
+        userId,
+        data: data
+      });
+
+      if (error) {
+        console.error('🔧 TrustedContactService: Error fetching trusted contacts:', error);
+        throw error;
+      }
+
       return data || [];
-    } catch (error) {
-      console.error('Error fetching trusted contacts:', error);
-      return [];
+    } catch (err) {
+      console.error('🔧 TrustedContactService: Exception in getTrustedContacts:', err);
+      throw err;
     }
   }
 
   // Verification Management
   async sendVerificationRequest(contactId: string): Promise<boolean> {
+    console.log('🔧 TrustedContactService: Sending verification request for contact:', contactId);
+    
     try {
       // Get contact details
       const { data: contact, error: contactError } = await this.supabase
@@ -244,6 +293,12 @@ export class TrustedContactService {
         .select('*')
         .eq('id', contactId)
         .single();
+
+      console.log('🔧 TrustedContactService: sendVerificationRequest contact result:', {
+        success: !contactError,
+        error: contactError?.message,
+        contactId
+      });
 
       if (contactError || !contact) {
         throw new Error('Contact not found');
@@ -266,6 +321,12 @@ export class TrustedContactService {
         })
         .select()
         .single();
+
+      console.log('🔧 TrustedContactService: sendVerificationRequest verification result:', {
+        success: !verificationError,
+        error: verificationError?.message,
+        contactId
+      });
 
       if (verificationError) throw verificationError;
 
@@ -290,8 +351,14 @@ export class TrustedContactService {
         }
       });
 
+      console.log('🔧 TrustedContactService: sendVerificationRequest email result:', {
+        success: !emailError,
+        error: emailError?.message,
+        contactId
+      });
+
       if (emailError) {
-        console.error('Error sending verification email:', emailError);
+        console.error('🔧 TrustedContactService: Error sending verification email:', emailError);
         // Don't fail the whole process if email fails
       }
 
@@ -310,12 +377,14 @@ export class TrustedContactService {
 
       return true;
     } catch (error) {
-      console.error('Error sending verification request:', error);
+      console.error('🔧 TrustedContactService: Error sending verification request:', error);
       return false;
     }
   }
 
   async verifyContact(verificationToken: string): Promise<boolean> {
+    console.log('🔧 TrustedContactService: Verifying contact with token:', verificationToken);
+    
     try {
       // Find verification request
       const { data: verification, error: verificationError } = await this.supabase
@@ -324,6 +393,12 @@ export class TrustedContactService {
         .eq('verification_token', verificationToken)
         .eq('status', 'pending')
         .single();
+
+      console.log('🔧 TrustedContactService: verifyContact verification result:', {
+        success: !verificationError,
+        error: verificationError?.message,
+        verificationToken
+      });
 
       if (verificationError || !verification) {
         throw new Error('Invalid or expired verification token');
@@ -379,12 +454,14 @@ export class TrustedContactService {
 
       return true;
     } catch (error) {
-      console.error('Error verifying contact:', error);
+      console.error('🔧 TrustedContactService: Error verifying contact:', error);
       return false;
     }
   }
 
   async getVerificationRequests(userId: string): Promise<ContactVerificationRequest[]> {
+    console.log('🔧 TrustedContactService: Getting verification requests for user:', userId);
+    
     try {
       const { data, error } = await this.supabase
         .from('contact_verification_requests')
@@ -395,10 +472,18 @@ export class TrustedContactService {
         .eq('trusted_contacts.user_id', userId)
         .order('created_at', { ascending: false });
 
+      console.log('🔧 TrustedContactService: getVerificationRequests result:', {
+        success: !error,
+        error: error?.message,
+        dataCount: data?.length || 0,
+        userId,
+        data: data
+      });
+
       if (error) throw error;
       return data || [];
     } catch (error) {
-      console.error('Error fetching verification requests:', error);
+      console.error('🔧 TrustedContactService: Error fetching verification requests:', error);
       return [];
     }
   }
@@ -408,6 +493,8 @@ export class TrustedContactService {
     userId: string,
     message: string = 'Please confirm if this person is inactive or unreachable'
   ): Promise<boolean> {
+    console.log('🔧 TrustedContactService: Requesting inactivity verification for user:', userId);
+    
     try {
       // Get verified contacts who can verify inactivity
       const { data: contacts, error: contactsError } = await this.supabase
@@ -416,6 +503,12 @@ export class TrustedContactService {
         .eq('user_id', userId)
         .eq('verification_status', 'verified')
         .eq('can_verify_inactivity', true);
+
+      console.log('🔧 TrustedContactService: requestInactivityVerification contacts result:', {
+        success: !contactsError,
+        error: contactsError?.message,
+        userId
+      });
 
       if (contactsError) throw contactsError;
 
@@ -470,7 +563,7 @@ export class TrustedContactService {
 
       return true;
     } catch (error) {
-      console.error('Error requesting inactivity verification:', error);
+      console.error('🔧 TrustedContactService: Error requesting inactivity verification:', error);
       return false;
     }
   }
@@ -480,6 +573,8 @@ export class TrustedContactService {
     response: 'confirmed' | 'denied',
     notes?: string
   ): Promise<boolean> {
+    console.log('🔧 TrustedContactService: Responding to inactivity verification request:', requestId);
+    
     try {
       const { error } = await this.supabase
         .from('inactivity_verification_requests')
@@ -489,6 +584,12 @@ export class TrustedContactService {
           response_notes: notes
         })
         .eq('id', requestId);
+
+      console.log('🔧 TrustedContactService: respondToInactivityVerification result:', {
+        success: !error,
+        error: error?.message,
+        requestId
+      });
 
       if (error) throw error;
 
@@ -516,7 +617,7 @@ export class TrustedContactService {
 
       return true;
     } catch (error) {
-      console.error('Error responding to inactivity verification:', error);
+      console.error('🔧 TrustedContactService: Error responding to inactivity verification:', error);
       return false;
     }
   }
@@ -527,6 +628,8 @@ export class TrustedContactService {
     messageIds: string[],
     reason: string
   ): Promise<boolean> {
+    console.log('🔧 TrustedContactService: Requesting message release for contact:', contactId);
+    
     try {
       // Verify contact has permission
       const { data: contact, error: contactError } = await this.supabase
@@ -536,6 +639,12 @@ export class TrustedContactService {
         .eq('verification_status', 'verified')
         .eq('can_release_messages', true)
         .single();
+
+      console.log('🔧 TrustedContactService: requestMessageRelease contact result:', {
+        success: !contactError,
+        error: contactError?.message,
+        contactId
+      });
 
       if (contactError || !contact) {
         throw new Error('Contact not authorized to release messages');
@@ -553,6 +662,12 @@ export class TrustedContactService {
         })
         .select()
         .single();
+
+      console.log('🔧 TrustedContactService: requestMessageRelease release result:', {
+        success: !releaseError,
+        error: releaseError?.message,
+        contactId
+      });
 
       if (releaseError) throw releaseError;
 
@@ -583,7 +698,7 @@ export class TrustedContactService {
 
       return true;
     } catch (error) {
-      console.error('Error requesting message release:', error);
+      console.error('🔧 TrustedContactService: Error requesting message release:', error);
       return false;
     }
   }
@@ -596,6 +711,8 @@ export class TrustedContactService {
   }
 
   async getContactByEmail(email: string): Promise<TrustedContact | null> {
+    console.log('🔧 TrustedContactService: Getting contact by email:', email);
+    
     try {
       const { data, error } = await this.supabase
         .from('trusted_contacts')
@@ -603,15 +720,23 @@ export class TrustedContactService {
         .eq('email', email)
         .single();
 
+      console.log('🔧 TrustedContactService: getContactByEmail result:', {
+        success: !error,
+        error: error?.message,
+        email
+      });
+
       if (error) return null;
       return data;
     } catch (error) {
-      console.error('Error getting contact by email:', error);
+      console.error('🔧 TrustedContactService: Error getting contact by email:', error);
       return null;
     }
   }
 
   async getEmergencyContacts(userId: string): Promise<TrustedContact[]> {
+    console.log('🔧 TrustedContactService: Getting emergency contacts for user:', userId);
+    
     try {
       const { data, error } = await this.supabase
         .from('trusted_contacts')
@@ -621,10 +746,18 @@ export class TrustedContactService {
         .eq('verification_status', 'verified')
         .order('created_at', { ascending: false });
 
+      console.log('🔧 TrustedContactService: getEmergencyContacts result:', {
+        success: !error,
+        error: error?.message,
+        dataCount: data?.length || 0,
+        userId,
+        data: data
+      });
+
       if (error) throw error;
       return data || [];
     } catch (error) {
-      console.error('Error fetching emergency contacts:', error);
+      console.error('🔧 TrustedContactService: Error fetching emergency contacts:', error);
       return [];
     }
   }
@@ -634,11 +767,13 @@ export class TrustedContactService {
     subject: string,
     message: string
   ): Promise<boolean> {
+    console.log('🔧 TrustedContactService: Notifying emergency contacts for user:', userId);
+    
     try {
       const emergencyContacts = await this.getEmergencyContacts(userId);
       
       if (emergencyContacts.length === 0) {
-        console.warn('No emergency contacts found for user:', userId);
+        console.warn('🔧 TrustedContactService: No emergency contacts found for user:', userId);
         return false;
       }
 
@@ -671,7 +806,7 @@ export class TrustedContactService {
 
       return true;
     } catch (error) {
-      console.error('Error notifying emergency contacts:', error);
+      console.error('🔧 TrustedContactService: Error notifying emergency contacts:', error);
       return false;
     }
   }

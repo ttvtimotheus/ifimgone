@@ -39,11 +39,25 @@ export default function Dashboard() {
   const [loading, setLoading] = useState(true);
   const [trustedContacts, setTrustedContacts] = useState(0);
   const [showProfileWidget, setShowProfileWidget] = useState(true);
-  
+
+  console.log('🔧 Dashboard Debug:', {
+    hasUser: !!user,
+    userId: user?.id,
+    hasSupabaseClient: !!supabase,
+    messagesCount: messages.length,
+    isLoading: loading
+  });
+
   // Optimized data fetching with a single query using joins
   useEffect(() => {
     async function fetchData() {
-      if (!user) return;
+      if (!user) {
+        console.log('🔧 Dashboard: No user, skipping message fetch');
+        setLoading(false);
+        return;
+      }
+
+      console.log('🔧 Dashboard: Starting message fetch for user:', user.id);
       
       try {
         setLoading(true);
@@ -58,21 +72,30 @@ export default function Dashboard() {
           `)
           .eq('user_id', user.id);
           
-        if (messagesError) throw messagesError;
-        
-        // Process the joined data
-        const processedMessages = messagesData.map(message => {
-          // Extract recipient from the nested structure
-          const recipient = message.recipients?.recipients || null;
-          
-          // Return a clean message object
-          return {
-            ...message,
-            recipient
-          };
+        console.log('🔧 Dashboard: Message fetch result:', {
+          success: !messagesError,
+          error: messagesError?.message,
+          dataCount: messagesData?.length || 0,
+          data: messagesData
         });
-        
-        setMessages(processedMessages);
+
+        if (messagesError) {
+          console.error('🔧 Dashboard: Error fetching messages:', messagesError);
+        } else {
+          console.log('🔧 Dashboard: Messages fetched successfully:', messagesData);
+          // Process the joined data
+          const processedMessages = messagesData.map(message => {
+            // Extract recipient from the nested structure
+            const recipient = message.recipients?.recipients || null;
+            
+            // Return a clean message object
+            return {
+              ...message,
+              recipient
+            };
+          });
+          setMessages(processedMessages);
+        }
         
         // Fetch trusted contacts count in parallel with messages
         const { count, error: contactsError } = await supabase
@@ -80,11 +103,18 @@ export default function Dashboard() {
           .select('*', { count: 'exact', head: true })
           .eq('user_id', user.id);
           
+        console.log('🔧 Dashboard: Trusted contacts fetch result:', {
+          success: !contactsError,
+          error: contactsError?.message,
+          dataCount: count || 0,
+          data: count
+        });
+
         if (!contactsError) {
           setTrustedContacts(count || 0);
         }
       } catch (error) {
-        console.error('Error fetching data:', error);
+        console.error('🔧 Dashboard: Exception during message fetch:', error);
         toast({
           title: 'Error',
           description: 'Failed to load your messages',
@@ -97,7 +127,7 @@ export default function Dashboard() {
     
     fetchData();
   }, [user, toast]);
-  
+
   // Add debounce to prevent excessive re-renders
   const debouncedMessages = useMemo(() => messages, [messages]);
 
