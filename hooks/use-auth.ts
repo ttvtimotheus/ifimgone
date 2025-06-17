@@ -87,7 +87,11 @@ export function useAuth() {
             navigator.userAgent
           );
 
-          router.push('/dashboard');
+          // Only redirect to dashboard if we're currently on the auth page
+          // This prevents unwanted redirects when switching between tabs
+          if (window.location.pathname === '/auth' || window.location.pathname === '/') {
+            router.push('/dashboard');
+          }
         }
       }
     );
