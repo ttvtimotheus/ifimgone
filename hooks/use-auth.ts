@@ -1,8 +1,8 @@
 'use client';
 
-import { useState, useEffect, createContext, useContext } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { User } from '@supabase/supabase-js';
-import { supabase } from '@/lib/supabase';
+import { useSupabaseClient, useSessionContext, useUser } from '@supabase/auth-helpers-react';
 import { useRouter } from 'next/navigation';
 import { InactivityChecker } from '@/lib/inactivity-checker';
 import { SecurityService } from '@/lib/security-service';
@@ -18,23 +18,23 @@ interface AuthContextType {
   refreshTwoFactorStatus: () => Promise<void>;
 }
 
-const AuthContext = createContext<AuthContextType | undefined>(undefined);
-
 export function useAuth() {
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
   const [twoFactorEnabled, setTwoFactorEnabled] = useState(false);
   const router = useRouter();
   const securityService = SecurityService.getInstance();
+  const supabaseClient = useSupabaseClient();
+  const session = useSessionContext();
+  const userFromSession = useUser();
 
   useEffect(() => {
     // Get initial session
     const getSession = async () => {
-      const { data: { session } } = await supabase.auth.getSession();
-      setUser(session?.user ?? null);
+      setUser(userFromSession ?? null);
       
-      if (session?.user) {
-        await checkTwoFactorStatus(session.user.id);
+      if (userFromSession) {
+        await checkTwoFactorStatus(userFromSession.id);
       }
       
       setLoading(false);
@@ -43,7 +43,7 @@ export function useAuth() {
     getSession();
 
     // Listen for auth changes
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(
+    const { data: { subscription } } = supabaseClient.auth.onAuthStateChange(
       async (event, session) => {
         setUser(session?.user ?? null);
         setLoading(false);
@@ -57,7 +57,7 @@ export function useAuth() {
         // Handle user activity tracking
         if (event === 'SIGNED_IN' && session?.user) {
           // Update last_active timestamp
-          await supabase
+          await supabaseClient
             .from('profiles')
             .update({ last_active: new Date().toISOString() })
             .eq('id', session.user.id);
@@ -67,7 +67,7 @@ export function useAuth() {
           await inactivityChecker.respondToInactivityCheck(session.user.id);
 
           // Log the sign-in activity
-          await supabase
+          await supabaseClient
             .from('activity_logs')
             .insert({
               user_id: session.user.id,
@@ -93,12 +93,12 @@ export function useAuth() {
     );
 
     return () => subscription.unsubscribe();
-  }, [router]);
+  }, [router, userFromSession]);
 
   // Check 2FA status from database
   const checkTwoFactorStatus = async (userId: string) => {
     try {
-      const { data: profile, error } = await supabase
+      const { data: profile, error } = await supabaseClient
         .from('profiles')
         .select('two_factor_enabled')
         .eq('id', userId)
@@ -123,7 +123,7 @@ export function useAuth() {
     if (!user) return;
 
     const updateActivity = async () => {
-      await supabase
+      await supabaseClient
         .from('profiles')
         .update({ last_active: new Date().toISOString() })
         .eq('id', user.id);
@@ -155,7 +155,7 @@ export function useAuth() {
     
     try {
       // First, try to sign in with email/password
-      const { data, error } = await supabase.auth.signInWithPassword({
+      const { data, error } = await supabaseClient.auth.signInWithPassword({
         email,
         password,
       });
@@ -174,7 +174,7 @@ export function useAuth() {
 
       // Check if user has 2FA enabled
       if (data.user) {
-        const { data: profile, error: profileError } = await supabase
+        const { data: profile, error: profileError } = await supabaseClient
           .from('profiles')
           .select('two_factor_enabled, two_factor_secret')
           .eq('id', data.user.id)
@@ -184,7 +184,7 @@ export function useAuth() {
           // If 2FA is enabled but no token provided, throw error
           if (!twoFactorToken) {
             // Sign out the user since they need 2FA
-            await supabase.auth.signOut();
+            await supabaseClient.auth.signOut();
             throw new Error('Two-factor authentication required');
           }
 
@@ -193,7 +193,7 @@ export function useAuth() {
           
           if (!isValidToken) {
             // Sign out the user since 2FA failed
-            await supabase.auth.signOut();
+            await supabaseClient.auth.signOut();
             await securityService.logLoginAttempt(
               email,
               false,
@@ -224,7 +224,7 @@ export function useAuth() {
   };
 
   const signUp = async (email: string, password: string) => {
-    const { error } = await supabase.auth.signUp({
+    const { error } = await supabaseClient.auth.signUp({
       email,
       password,
     });
@@ -234,7 +234,7 @@ export function useAuth() {
   };
 
   const signInWithGoogle = async () => {
-    const { error } = await supabase.auth.signInWithOAuth({
+    const { error } = await supabaseClient.auth.signInWithOAuth({
       provider: 'google',
       options: {
         redirectTo: `${window.location.origin}/dashboard`
@@ -248,7 +248,7 @@ export function useAuth() {
   const signOut = async () => {
     if (user) {
       // Log the sign-out activity
-      await supabase
+      await supabaseClient
         .from('activity_logs')
         .insert({
           user_id: user.id,
@@ -259,7 +259,7 @@ export function useAuth() {
         });
     }
 
-    const { error } = await supabase.auth.signOut();
+    const { error } = await supabaseClient.auth.signOut();
     if (error) throw error;
     setTwoFactorEnabled(false);
     router.push('/');
