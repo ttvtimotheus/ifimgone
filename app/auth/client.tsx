@@ -8,7 +8,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Label } from '@/components/ui/label';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Separator } from '@/components/ui/separator';
-import { Heart, Mail, Lock, ArrowLeft, Chrome, Loader2, Shield } from 'lucide-react';
+import { Heart, Mail, Lock, ArrowLeft, Chrome, Loader2, Shield, Sparkles, Eye, EyeOff } from 'lucide-react';
 import Link from 'next/link';
 import { useAuth } from '@/hooks/use-auth';
 
@@ -22,6 +22,8 @@ export default function AuthPageClient() {
   const [googleLoading, setGoogleLoading] = useState(false);
   const [error, setError] = useState('');
   const [needsTwoFactor, setNeedsTwoFactor] = useState(false);
+  const [showPassword, setShowPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const { signIn, signUp, signInWithGoogle } = useAuth();
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -33,6 +35,10 @@ export default function AuthPageClient() {
       if (isSignUp) {
         if (password !== confirmPassword) {
           setError('Passwords do not match');
+          return;
+        }
+        if (password.length < 8) {
+          setError('Password must be at least 8 characters long');
           return;
         }
         await signUp(email, password);
@@ -73,8 +79,33 @@ export default function AuthPageClient() {
   };
 
   return (
-    <div className="min-h-screen bg-slate-950 relative overflow-hidden">
-      <div className="absolute inset-0 bg-gradient-to-br from-slate-900 via-slate-950 to-slate-900" />
+    <div className="min-h-screen bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950 relative overflow-hidden">
+      {/* Animated background elements */}
+      <div className="absolute inset-0">
+        {[...Array(20)].map((_, i) => (
+          <motion.div
+            key={i}
+            className="absolute w-1 h-1 bg-gradient-to-r from-amber-400 to-rose-400 rounded-full"
+            initial={{ 
+              x: Math.random() * window.innerWidth,
+              y: Math.random() * window.innerHeight,
+              opacity: 0
+            }}
+            animate={{ 
+              opacity: [0, 1, 0],
+              scale: [0, 1, 0],
+              y: [null, Math.random() * window.innerHeight],
+              x: [null, Math.random() * window.innerWidth]
+            }}
+            transition={{
+              duration: 8 + Math.random() * 4,
+              repeat: Infinity,
+              delay: Math.random() * 4,
+              ease: "easeInOut"
+            }}
+          />
+        ))}
+      </div>
       
       <div className="relative z-10 min-h-screen flex items-center justify-center p-4">
         <motion.div
@@ -84,14 +115,29 @@ export default function AuthPageClient() {
           className="w-full max-w-md"
         >
           <div className="text-center mb-8">
-            <Link href="/" className="inline-flex items-center text-slate-400 hover:text-white transition-colors mb-6">
-              <ArrowLeft className="w-4 h-4 mr-2" />
+            <Link href="/" className="inline-flex items-center text-slate-400 hover:text-white transition-colors mb-6 group">
+              <ArrowLeft className="w-4 h-4 mr-2 group-hover:-translate-x-1 transition-transform" />
               Back to home
             </Link>
             
-            <div className="inline-flex items-center justify-center w-16 h-16 rounded-full bg-gradient-to-br from-amber-500/20 to-red-500/20 border border-white/10 mb-6">
-              <Heart className="w-8 h-8 text-amber-500" />
-            </div>
+            <motion.div 
+              className="inline-flex items-center justify-center w-20 h-20 rounded-full bg-gradient-to-br from-amber-500/20 to-red-500/20 border border-white/10 mb-6 backdrop-blur-sm"
+              animate={{ 
+                scale: [1, 1.05, 1],
+                boxShadow: [
+                  "0 0 0 0 rgba(245, 158, 11, 0)",
+                  "0 0 0 10px rgba(245, 158, 11, 0.1)",
+                  "0 0 0 0 rgba(245, 158, 11, 0)"
+                ]
+              }}
+              transition={{ 
+                duration: 2,
+                repeat: Infinity,
+                ease: "easeInOut"
+              }}
+            >
+              <Heart className="w-10 h-10 text-amber-500" />
+            </motion.div>
             
             <h1 className="text-3xl font-bold text-white mb-2">
               {needsTwoFactor ? 'Two-Factor Authentication' : 
@@ -106,11 +152,20 @@ export default function AuthPageClient() {
             </p>
           </div>
 
-          <Card className="border-slate-800 bg-slate-900/50 backdrop-blur-sm">
+          <Card className="border-slate-800 bg-slate-900/50 backdrop-blur-sm shadow-2xl">
             <CardHeader>
-              <CardTitle className="text-white">
-                {needsTwoFactor ? 'Verify Your Identity' : 
-                 isSignUp ? 'Sign Up' : 'Sign In'}
+              <CardTitle className="text-white flex items-center">
+                {needsTwoFactor ? (
+                  <>
+                    <Shield className="w-5 h-5 mr-2" />
+                    Verify Your Identity
+                  </>
+                ) : (
+                  <>
+                    <Sparkles className="w-5 h-5 mr-2" />
+                    {isSignUp ? 'Sign Up' : 'Sign In'}
+                  </>
+                )}
               </CardTitle>
               <CardDescription>
                 {needsTwoFactor 
@@ -133,7 +188,7 @@ export default function AuthPageClient() {
                           placeholder="you@example.com"
                           value={email}
                           onChange={(e) => setEmail(e.target.value)}
-                          className="pl-10 bg-slate-800 border-slate-700 text-white placeholder:text-slate-400"
+                          className="pl-10 bg-slate-800 border-slate-700 text-white placeholder:text-slate-400 focus:border-amber-500 focus:ring-amber-500/20"
                           required
                           disabled={loading || googleLoading}
                         />
@@ -146,14 +201,21 @@ export default function AuthPageClient() {
                         <Lock className="absolute left-3 top-3 w-4 h-4 text-slate-400" />
                         <Input
                           id="password"
-                          type="password"
+                          type={showPassword ? "text" : "password"}
                           placeholder="••••••••"
                           value={password}
                           onChange={(e) => setPassword(e.target.value)}
-                          className="pl-10 bg-slate-800 border-slate-700 text-white placeholder:text-slate-400"
+                          className="pl-10 pr-10 bg-slate-800 border-slate-700 text-white placeholder:text-slate-400 focus:border-amber-500 focus:ring-amber-500/20"
                           required
                           disabled={loading || googleLoading}
                         />
+                        <button
+                          type="button"
+                          onClick={() => setShowPassword(!showPassword)}
+                          className="absolute right-3 top-3 text-slate-400 hover:text-white transition-colors"
+                        >
+                          {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                        </button>
                       </div>
                     </div>
 
@@ -164,14 +226,21 @@ export default function AuthPageClient() {
                           <Lock className="absolute left-3 top-3 w-4 h-4 text-slate-400" />
                           <Input
                             id="confirmPassword"
-                            type="password"
+                            type={showConfirmPassword ? "text" : "password"}
                             placeholder="••••••••"
                             value={confirmPassword}
                             onChange={(e) => setConfirmPassword(e.target.value)}
-                            className="pl-10 bg-slate-800 border-slate-700 text-white placeholder:text-slate-400"
+                            className="pl-10 pr-10 bg-slate-800 border-slate-700 text-white placeholder:text-slate-400 focus:border-amber-500 focus:ring-amber-500/20"
                             required
                             disabled={loading || googleLoading}
                           />
+                          <button
+                            type="button"
+                            onClick={() => setShowConfirmPassword(!showConfirmPassword)}
+                            className="absolute right-3 top-3 text-slate-400 hover:text-white transition-colors"
+                          >
+                            {showConfirmPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                          </button>
                         </div>
                       </div>
                     )}
@@ -190,7 +259,7 @@ export default function AuthPageClient() {
                         placeholder="000000"
                         value={twoFactorToken}
                         onChange={(e) => setTwoFactorToken(e.target.value.replace(/\D/g, '').slice(0, 6))}
-                        className="pl-10 bg-slate-800 border-slate-700 text-white placeholder:text-slate-400 text-center tracking-widest"
+                        className="pl-10 bg-slate-800 border-slate-700 text-white placeholder:text-slate-400 text-center tracking-widest focus:border-amber-500 focus:ring-amber-500/20"
                         maxLength={6}
                         required
                         disabled={loading}
@@ -213,7 +282,7 @@ export default function AuthPageClient() {
 
                 <Button 
                   type="submit" 
-                  className="w-full bg-amber-500 hover:bg-amber-600 text-slate-950 font-semibold"
+                  className="w-full bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-600 hover:to-orange-600 text-slate-950 font-semibold transition-all duration-300 hover:scale-[1.02] hover:shadow-lg"
                   disabled={loading || googleLoading || (needsTwoFactor && twoFactorToken.length !== 6)}
                 >
                   {loading ? (
@@ -259,7 +328,7 @@ export default function AuthPageClient() {
                   <>
                     <div className="relative my-6">
                       <div className="absolute inset-0 flex items-center">
-                        <Separator className="w-full border-slate-800" />
+                        <Separator className="w-full border-slate-700" />
                       </div>
                       <div className="relative flex justify-center text-xs">
                         <span className="bg-slate-900 px-2 text-slate-500">Or continue with</span>
@@ -269,7 +338,7 @@ export default function AuthPageClient() {
                     <Button
                       type="button"
                       onClick={handleGoogleSignIn}
-                      className="w-full bg-slate-800 hover:bg-slate-700 text-white"
+                      className="w-full bg-slate-800 hover:bg-slate-700 text-white border border-slate-700 transition-all duration-300 hover:scale-[1.02]"
                       disabled={loading || googleLoading}
                     >
                       {googleLoading ? (
@@ -289,6 +358,13 @@ export default function AuthPageClient() {
               </form>
             </CardContent>
           </Card>
+
+          {/* Security notice */}
+          <div className="text-center mt-6">
+            <p className="text-xs text-slate-500">
+              Protected by enterprise-grade security • Your data is encrypted
+            </p>
+          </div>
         </motion.div>
       </div>
     </div>
