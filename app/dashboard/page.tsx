@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -13,6 +13,7 @@ import { Navigation } from '@/components/navigation';
 import { ProfileCompletionWidget } from '@/components/profile-completion-widget';
 import { useSupabaseClient } from '@supabase/auth-helpers-react';
 import { useToast } from '@/hooks/use-toast';
+import { useSafeAnimation, SafeAnimationVariants, SafeAnimatePresenceProps } from '@/hooks/use-safe-animation';
 
 // Define types for our data
 type Message = {
@@ -48,6 +49,7 @@ export default function Dashboard() {
   const [showProfileWidget, setShowProfileWidget] = useState(true);
   const [currentQuote, setCurrentQuote] = useState(0);
   const [isClient, setIsClient] = useState(false);
+  const { isMounted, safeAnimate } = useSafeAnimation();
 
   useEffect(() => {
     setIsClient(true);
@@ -56,72 +58,76 @@ export default function Dashboard() {
   // Rotate inspirational quotes
   useEffect(() => {
     const interval = setInterval(() => {
-      setCurrentQuote(prev => (prev + 1) % inspirationalQuotes.length);
+      if (isMounted()) {
+        setCurrentQuote(prev => (prev + 1) % inspirationalQuotes.length);
+      }
     }, 8000);
     return () => clearInterval(interval);
-  }, []);
+  }, [isMounted]);
 
   // Optimized data fetching with a single query using joins
-  useEffect(() => {
-    async function fetchData() {
-      if (!user) {
-        setLoading(false);
-        return;
+  const fetchData = useCallback(async () => {
+    if (!user || !isMounted()) {
+      setLoading(false);
+      return;
+    }
+    
+    try {
+      setLoading(true);
+        
+      // Use a single query with joins to get messages and recipients in one go
+      const { data: messagesData, error: messagesError } = await supabase
+        .from('messages')
+        .select(`
+          *,
+          message_recipients!inner (recipient_id),
+          recipients:message_recipients!inner(recipients(*))
+        `)
+        .eq('user_id', user.id);
+
+      if (messagesError) {
+        console.error('Error fetching messages:', messagesError);
+      } else {
+        // Process the joined data
+        const processedMessages = messagesData.map(message => {
+          // Extract recipient from the nested structure
+          const recipient = message.recipients?.recipients || null;
+          
+          // Return a clean message object
+          return {
+            ...message,
+            recipient
+          };
+        });
+        setMessages(processedMessages);
       }
       
-      try {
-        setLoading(true);
-        
-        // Use a single query with joins to get messages and recipients in one go
-        const { data: messagesData, error: messagesError } = await supabase
-          .from('messages')
-          .select(`
-            *,
-            message_recipients!inner (recipient_id),
-            recipients:message_recipients!inner(recipients(*))
-          `)
-          .eq('user_id', user.id);
+      // Fetch trusted contacts count in parallel with messages
+      const { count, error: contactsError } = await supabase
+        .from('trusted_contacts')
+        .select('*', { count: 'exact', head: true })
+        .eq('user_id', user.id);
 
-        if (messagesError) {
-          console.error('Error fetching messages:', messagesError);
-        } else {
-          // Process the joined data
-          const processedMessages = messagesData.map(message => {
-            // Extract recipient from the nested structure
-            const recipient = message.recipients?.recipients || null;
-            
-            // Return a clean message object
-            return {
-              ...message,
-              recipient
-            };
-          });
-          setMessages(processedMessages);
-        }
-        
-        // Fetch trusted contacts count in parallel with messages
-        const { count, error: contactsError } = await supabase
-          .from('trusted_contacts')
-          .select('*', { count: 'exact', head: true })
-          .eq('user_id', user.id);
-
-        if (!contactsError) {
-          setTrustedContacts(count || 0);
-        }
-      } catch (error) {
-        console.error('Exception during message fetch:', error);
-        toast({
-          title: 'Error',
-          description: 'Failed to load your messages',
-          variant: 'destructive'
-        });
-      } finally {
+      if (!contactsError) {
+        setTrustedContacts(count || 0);
+      }
+    } catch (error) {
+      console.error('Exception during message fetch:', error);
+      toast({
+        title: 'Error',
+        description: 'Failed to load your messages',
+        variant: 'destructive'
+      });
+    } finally {
+      if (isMounted()) {
         setLoading(false);
       }
     }
-    
+  }, [user, supabase, toast, isMounted]);
+  
+  useEffect(() => {
     fetchData();
-  }, [user, toast, supabase]);
+  }, [fetchData]);
 
   // Add debounce to prevent excessive re-renders
   const debouncedMessages = useMemo(() => messages, [messages]);

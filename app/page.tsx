@@ -1,12 +1,13 @@
 'use client';
 
-import React, { useEffect, useState, useRef } from 'react';
+import React, { useEffect, useState, useRef, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Button } from '@/components/ui/button';
 import { Heart, ArrowRight, Shield, Clock, MessageCircle, Sparkles, Users, Lock, Star, Feather, Infinity, BookOpen } from 'lucide-react';
 import Link from 'next/link';
 import { useAuth } from '@/hooks/use-auth';
 import { useRouter } from 'next/navigation';
+import { useSafeAnimation, SafeAnimationVariants, SafeAnimatePresenceProps } from '@/hooks/use-safe-animation';
 
 const philosophicalQuotes = [
   {
@@ -112,21 +113,26 @@ export default function Home() {
   const { user, loading } = useAuth();
   const router = useRouter();
   const containerRef = useRef<HTMLDivElement>(null);
+  const { isMounted, safeAnimate } = useSafeAnimation();
 
   useEffect(() => {
     setIsClient(true);
   }, []);
 
+  const handleMouseMove = useCallback((e: MouseEvent) => {
+    if (isMounted()) {
+      setMousePosition({ x: e.clientX, y: e.clientY });
+    }
+  }, [isMounted]);
+
+  const handleScroll = useCallback(() => {
+    if (isMounted()) {
+      setScrollY(window.scrollY);
+    }
+  }, [isMounted]);
+
   useEffect(() => {
     if (!isClient) return;
-
-    const handleMouseMove = (e: MouseEvent) => {
-      setMousePosition({ x: e.clientX, y: e.clientY });
-    };
-
-    const handleScroll = () => {
-      setScrollY(window.scrollY);
-    };
 
     window.addEventListener('mousemove', handleMouseMove);
     window.addEventListener('scroll', handleScroll);
@@ -135,7 +141,7 @@ export default function Home() {
       window.removeEventListener('mousemove', handleMouseMove);
       window.removeEventListener('scroll', handleScroll);
     };
-  }, [isClient]);
+  }, [isClient, handleMouseMove, handleScroll]);
 
   useEffect(() => {
     if (user) {
@@ -145,52 +151,58 @@ export default function Home() {
     
     // Quote rotation
     const quoteTimer = setInterval(() => {
-      setCurrentQuote(prev => (prev + 1) % philosophicalQuotes.length);
+      if (isMounted()) {
+        setCurrentQuote(prev => (prev + 1) % philosophicalQuotes.length);
+      }
     }, 6000);
 
     // Journey progression
     const journeyTimer = setInterval(() => {
-      setCurrentJourney(prev => {
-        if (prev < emotionalJourney.length - 1) {
-          return prev + 1;
-        } else {
-          setShowCTA(true);
-          clearInterval(journeyTimer);
-          return prev;
-        }
-      });
+      if (isMounted()) {
+        setCurrentJourney(prev => {
+          if (prev < emotionalJourney.length - 1) {
+            return prev + 1;
+          } else {
+            setShowCTA(true);
+            clearInterval(journeyTimer);
+            return prev;
+          }
+        });
+      }
     }, 4000);
 
     return () => {
       clearInterval(quoteTimer);
       clearInterval(journeyTimer);
     };
-  }, [user, router]);
+  }, [user, router, isMounted]);
 
   if (loading) {
     return (
       <div className="min-h-screen bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950 flex items-center justify-center">
-        <motion.div
-          animate={{ 
-            scale: [1, 1.2, 1],
-            rotate: [0, 180, 360],
-            opacity: [0.5, 1, 0.5]
-          }}
-          transition={{ 
-            duration: 3,
-            repeat: Infinity,
-            repeatType: "loop",
-            ease: "easeInOut"
-          }}
-          className="relative"
-        >
-          <Heart className="w-16 h-16 text-amber-500" />
+        {isMounted() && (
           <motion.div
-            className="absolute inset-0 rounded-full border-2 border-amber-500/30"
-            animate={{ scale: [1, 2, 1], opacity: [1, 0, 1] }}
-            transition={{ duration: 3, repeat: Infinity, repeatType: "loop" }}
-          />
-        </motion.div>
+            animate={isMounted() ? { 
+              scale: [1, 1.2, 1],
+              rotate: [0, 180, 360],
+              opacity: [0.5, 1, 0.5]
+            } : {}}
+            transition={{ 
+              duration: 3,
+              repeat: Infinity,
+              repeatType: "loop",
+              ease: "easeInOut"
+            }}
+            className="relative"
+          >
+            <Heart className="w-16 h-16 text-amber-500" />
+            <motion.div
+              className="absolute inset-0 rounded-full border-2 border-amber-500/30"
+              animate={isMounted() ? { scale: [1, 2, 1], opacity: [1, 0, 1] } : {}}
+              transition={{ duration: 3, repeat: Infinity, repeatType: "loop" }}
+            />
+          </motion.div>
+        )}
       </div>
     );
   }
@@ -207,35 +219,42 @@ export default function Home() {
       {/* Animated background particles */}
       <div className="absolute inset-0 overflow-hidden">
         {/* Floating particles */}
-        {isClient && [...Array(30)].map((_, i) => (
-          <motion.div
-            key={`particle-${i}`}
-            className="absolute w-1 h-1 bg-gradient-to-r from-amber-400/30 to-rose-400/30 rounded-full"
-            initial={{ 
-              x: Math.random() * window.innerWidth,
-              y: Math.random() * window.innerHeight,
-              opacity: 0,
-              scale: 0
-            }}
-            animate={{ 
-              opacity: [0, 0.8, 0],
-              scale: [0, 1, 0],
-              y: [null, Math.random() * window.innerHeight],
-              x: [null, Math.random() * window.innerWidth]
-            }}
-            transition={{
-              duration: 15 + Math.random() * 10,
-              repeat: Infinity,
-              repeatType: "loop",
-              delay: Math.random() * 8,
-              ease: "easeInOut"
-            }}
-          />
-        ))}
+        {isClient && isMounted() && [...Array(30)].map((_, i) => {
+          const initialX = typeof window !== 'undefined' ? Math.random() * window.innerWidth : 0;
+          const initialY = typeof window !== 'undefined' ? Math.random() * window.innerHeight : 0;
+          const targetX = typeof window !== 'undefined' ? Math.random() * window.innerWidth : 0;
+          const targetY = typeof window !== 'undefined' ? Math.random() * window.innerHeight : 0;
+          
+          return (
+            <motion.div
+              key={`particle-${i}`}
+              className="absolute w-1 h-1 bg-gradient-to-r from-amber-400/30 to-rose-400/30 rounded-full"
+              initial={{ 
+                x: initialX,
+                y: initialY,
+                opacity: 0,
+                scale: 0
+              }}
+              animate={isMounted() ? { 
+                opacity: [0, 0.8, 0],
+                scale: [0, 1, 0],
+                y: [null, targetY],
+                x: [null, targetX]
+              } : {}}
+              transition={{
+                duration: 15 + Math.random() * 10,
+                repeat: Infinity,
+                repeatType: "loop",
+                delay: Math.random() * 8,
+                ease: "easeInOut"
+              }}
+            />
+          );
+        })}
 
         {/* Constellation effect */}
         <div className="absolute inset-0">
-          {[...Array(50)].map((_, i) => (
+          {isMounted() && [...Array(50)].map((_, i) => (
             <motion.div
               key={`star-${i}`}
               className="absolute w-0.5 h-0.5 bg-white/20 rounded-full"
@@ -243,10 +262,10 @@ export default function Home() {
                 left: `${Math.random() * 100}%`,
                 top: `${Math.random() * 100}%`,
               }}
-              animate={{
+              animate={isMounted() ? {
                 opacity: [0.2, 1, 0.2],
                 scale: [0.5, 1, 0.5]
-              }}
+              } : {}}
               transition={{
                 duration: 3 + Math.random() * 4,
                 repeat: Infinity,
@@ -258,7 +277,7 @@ export default function Home() {
         </div>
 
         {/* Mouse follower effect */}
-        {isClient && (
+        {isClient && isMounted() && (
           <motion.div
             className="absolute w-96 h-96 rounded-full pointer-events-none opacity-30"
             style={{
@@ -269,10 +288,10 @@ export default function Home() {
                 'rgba(167, 139, 250, 0.1)'
               } 0%, transparent 70%)`,
             }}
-            animate={{
+            animate={isMounted() ? {
               x: mousePosition.x - 192,
               y: mousePosition.y - 192,
-            }}
+            } : {}}
             transition={{ type: "spring", damping: 30, stiffness: 200 }}
           />
         )}
@@ -281,10 +300,10 @@ export default function Home() {
       {/* Main content */}
       <motion.div 
         className="relative z-10 min-h-screen flex flex-col"
-        style={{ 
+        style={isMounted() ? { 
           opacity: 1 - (scrollY / 1000),
           scale: 1 - (scrollY / 2000)
-        }}
+        } : {}}
       >
         {/* Hero section */}
         <div className="flex-1 flex items-center justify-center px-8 py-20">

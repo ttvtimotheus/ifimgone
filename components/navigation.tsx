@@ -1,18 +1,20 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Button } from '@/components/ui/button';
 import { Heart, Menu, X, Home, Settings, Plus, LogOut, User, Shield, Users, Sparkles } from 'lucide-react';
 import Link from 'next/link';
 import { useAuth } from '@/hooks/use-auth';
 import { useRouter, usePathname } from 'next/navigation';
+import { useSafeAnimation, SafeAnimationVariants, SafeAnimatePresenceProps } from '@/hooks/use-safe-animation';
 
 export function Navigation() {
   const [isOpen, setIsOpen] = useState(false);
   const { user, signOut } = useAuth();
   const router = useRouter();
   const pathname = usePathname();
+  const { isMounted, safeAnimate } = useSafeAnimation();
 
   const menuItems = [
     { href: '/dashboard', label: 'Dashboard', icon: Home },
@@ -23,18 +25,20 @@ export function Navigation() {
     { href: '/settings', label: 'Settings', icon: Settings },
   ];
 
-  const handleSignOut = async () => {
+  const handleSignOut = useCallback(async () => {
+    if (!isMounted()) return;
     try {
       await signOut();
     } catch (error) {
       console.error('Error signing out:', error);
     }
-  };
+  }, [signOut, isMounted]);
 
-  const handleNavigation = (href: string) => {
+  const handleNavigation = useCallback((href: string) => {
+    if (!isMounted()) return;
     setIsOpen(false);
     router.push(href);
-  };
+  }, [router, isMounted]);
 
   return (
     <nav className="fixed top-0 left-0 right-0 z-50 bg-slate-950/80 backdrop-blur-xl border-b border-slate-800/50">
@@ -47,8 +51,9 @@ export function Navigation() {
           >
             <motion.div 
               className="flex items-center justify-center w-10 h-10 rounded-full bg-gradient-to-br from-amber-500/20 to-red-500/20 border border-white/10 backdrop-blur-sm"
-              whileHover={{ scale: 1.1 }}
-              whileTap={{ scale: 0.95 }}
+              whileHover={isMounted() ? { scale: 1.1 } : {}}
+              whileTap={isMounted() ? { scale: 0.95 } : {}}
+              transition={{ duration: 0.2, ease: "easeOut" }}
             >
               <Heart className="w-5 h-5 text-amber-500 group-hover:text-amber-400 transition-colors" />
             </motion.div>
@@ -64,12 +69,13 @@ export function Navigation() {
                 className={`flex items-center text-slate-300 hover:text-white transition-colors relative ${
                   pathname === item.href ? 'text-amber-400' : ''
                 }`}
-                whileHover={{ y: -2 }}
-                whileTap={{ y: 0 }}
+                whileHover={isMounted() ? { y: -2 } : {}}
+                whileTap={isMounted() ? { y: 0 } : {}}
+                transition={{ duration: 0.2, ease: "easeOut" }}
               >
                 <item.icon className="w-4 h-4 mr-2" />
                 {item.label}
-                {pathname === item.href && (
+                {pathname === item.href && isMounted() && (
                   <motion.div
                     className="absolute -bottom-2 left-0 right-0 h-0.5 bg-gradient-to-r from-amber-400 to-orange-400 rounded-full"
                     layoutId="activeTab"
@@ -98,31 +104,32 @@ export function Navigation() {
             className="md:hidden text-white"
             onClick={() => setIsOpen(!isOpen)}
           >
-            <AnimatePresence mode="wait">
-              <motion.div
-                key={isOpen ? 'close' : 'open'}
-                initial={{ rotate: 0 }}
-                animate={{ rotate: 0 }}
-                exit={{ rotate: 90 }}
-                transition={{ duration: 0.2 }}
-              >
-                {isOpen ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
-              </motion.div>
+            <AnimatePresence {...SafeAnimatePresenceProps}>
+              {isMounted() && (
+                <motion.div
+                  key={isOpen ? 'close' : 'open'}
+                  {...SafeAnimationVariants.fadeIn}
+                  transition={{ duration: 0.2, ease: "easeOut" }}
+                >
+                  {isOpen ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
+                </motion.div>
+              )}
             </AnimatePresence>
           </Button>
         </div>
 
         {/* Mobile Menu */}
-        <AnimatePresence>
-          {isOpen && (
+        <AnimatePresence {...SafeAnimatePresenceProps}>
+          {isOpen && isMounted() && (
             <motion.div
-              initial={{ opacity: 0, height: 0 }}
-              animate={{ opacity: 1, height: 'auto' }}
-              exit={{ opacity: 0, height: 0 }}
+              {...SafeAnimationVariants.slideInFromTop}
               transition={{ duration: 0.3, ease: "easeInOut" }}
               className="md:hidden border-t border-slate-800/50 py-4 bg-slate-950/90 backdrop-blur-xl"
             >
-              <div className="space-y-2">
+              <motion.div 
+                className="space-y-2"
+                {...SafeAnimationVariants.staggerContainer}
+              >
                 {menuItems.map((item, index) => (
                   <motion.button
                     key={item.href}
@@ -130,9 +137,8 @@ export function Navigation() {
                     className={`flex items-center text-slate-300 hover:text-white transition-colors py-3 w-full text-left ${
                       pathname === item.href ? 'text-amber-400' : ''
                     }`}
-                    initial={{ opacity: 0, x: -20 }}
-                    animate={{ opacity: 1, x: 0 }}
-                    transition={{ delay: index * 0.1 }}
+                    {...SafeAnimationVariants.staggerItem}
+                    transition={{ delay: index * 0.1, duration: 0.3, ease: "easeOut" }}
                   >
                     <item.icon className="w-4 h-4 mr-3" />
                     {item.label}
@@ -143,9 +149,8 @@ export function Navigation() {
                 ))}
                 
                 <motion.div
-                  initial={{ opacity: 0, x: -20 }}
-                  animate={{ opacity: 1, x: 0 }}
-                  transition={{ delay: menuItems.length * 0.1 }}
+                  {...SafeAnimationVariants.staggerItem}
+                  transition={{ delay: menuItems.length * 0.1, duration: 0.3, ease: "easeOut" }}
                 >
                   <Button 
                     variant="ghost" 
@@ -157,7 +162,7 @@ export function Navigation() {
                     Sign Out
                   </Button>
                 </motion.div>
-              </div>
+              </motion.div>
             </motion.div>
           )}
         </AnimatePresence>

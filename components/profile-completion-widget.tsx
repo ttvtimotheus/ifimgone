@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { motion } from 'framer-motion';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -19,6 +19,7 @@ import {
 import Link from 'next/link';
 import { ProfileService, ProfileStats } from '@/lib/profile-service';
 import { useAuth } from '@/hooks/use-auth';
+import { useSafeAnimation, SafeAnimationVariants } from '@/hooks/use-safe-animation';
 
 interface ProfileCompletionWidgetProps {
   onDismiss?: () => void;
@@ -30,15 +31,10 @@ export function ProfileCompletionWidget({ onDismiss, showDismiss = false }: Prof
   const [stats, setStats] = useState<ProfileStats | null>(null);
   const [recommendations, setRecommendations] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
+  const { isMounted } = useSafeAnimation();
 
-  useEffect(() => {
-    if (user) {
-      fetchProfileData();
-    }
-  }, [user]);
-
-  const fetchProfileData = async () => {
-    if (!user) return;
+  const fetchProfileData = useCallback(async () => {
+    if (!user || !isMounted()) return;
 
     try {
       setLoading(true);
@@ -49,14 +45,24 @@ export function ProfileCompletionWidget({ onDismiss, showDismiss = false }: Prof
         profileService.getRecommendations(user.id)
       ]);
 
-      setStats(profileStats);
-      setRecommendations(profileRecommendations);
+      if (isMounted()) {
+        setStats(profileStats);
+        setRecommendations(profileRecommendations);
+      }
     } catch (error) {
       console.error('Error fetching profile data:', error);
     } finally {
-      setLoading(false);
+      if (isMounted()) {
+        setLoading(false);
+      }
     }
-  };
+  }, [user, isMounted]);
+
+  useEffect(() => {
+    if (user) {
+      fetchProfileData();
+    }
+  }, [user, fetchProfileData]);
 
   if (loading || !stats) {
     return null;
@@ -81,9 +87,8 @@ export function ProfileCompletionWidget({ onDismiss, showDismiss = false }: Prof
 
   return (
     <motion.div
-      initial={{ opacity: 0, y: 20 }}
-      animate={{ opacity: 1, y: 0 }}
-      transition={{ duration: 0.5 }}
+      {...SafeAnimationVariants.slideInFromBottom}
+      transition={{ duration: 0.5, ease: "easeOut" }}
     >
       <Card className="border-slate-800 bg-slate-900/50 relative">
         {showDismiss && onDismiss && (
