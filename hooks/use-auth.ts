@@ -36,6 +36,8 @@ export function useAuth() {
   useEffect(() => {
     const { data: { subscription } } = supabaseClient.auth.onAuthStateChange(
       async (event, session) => {
+        console.log('Auth state change:', event, session?.user?.id);
+        
         setUser(session?.user ?? null);
         setLoading(false);
         
@@ -47,26 +49,41 @@ export function useAuth() {
         
         if (event === 'SIGNED_IN' && session?.user) {
           // Update last_active timestamp
-          await supabaseClient
-            .from('profiles')
-            .update({ last_active: new Date().toISOString() })
-            .eq('id', session.user.id);
+          try {
+            await supabaseClient
+              .from('profiles')
+              .update({ last_active: new Date().toISOString() })
+              .eq('id', session.user.id);
 
-          // Log the sign-in activity
-          await supabaseClient
-            .from('activity_logs')
-            .insert({
-              user_id: session.user.id,
-              action: 'user_signed_in',
-              details: {
-                timestamp: new Date().toISOString(),
-                user_agent: navigator.userAgent
-              }
-            });
+            // Log the sign-in activity
+            await supabaseClient
+              .from('activity_logs')
+              .insert({
+                user_id: session.user.id,
+                action: 'user_signed_in',
+                details: {
+                  timestamp: new Date().toISOString(),
+                  user_agent: typeof navigator !== 'undefined' ? navigator.userAgent : 'unknown'
+                }
+              });
+          } catch (error) {
+            console.error('Error updating user activity:', error);
+          }
 
-          // Only redirect to dashboard if we're currently on the auth page
-          if (window.location.pathname === '/auth' || window.location.pathname === '/') {
+          // Only redirect to dashboard if we're currently on the auth page or home page
+          const currentPath = window.location.pathname;
+          if (currentPath === '/auth' || currentPath === '/') {
             router.push('/dashboard');
+          }
+        }
+        
+        if (event === 'SIGNED_OUT') {
+          // Clear any cached data
+          setTwoFactorEnabled(false);
+          // Only redirect to home if not already there
+          const currentPath = window.location.pathname;
+          if (currentPath !== '/' && currentPath !== '/auth') {
+            router.push('/');
           }
         }
       }
@@ -163,22 +180,35 @@ export function useAuth() {
   };
 
   const signOut = async () => {
-    if (user) {
-      await supabaseClient
-        .from('activity_logs')
-        .insert({
-          user_id: user.id,
-          action: 'user_signed_out',
-          details: {
-            timestamp: new Date().toISOString()
-          }
-        });
-    }
+    try {
+      if (user) {
+        await supabaseClient
+          .from('activity_logs')
+          .insert({
+            user_id: user.id,
+            action: 'user_signed_out',
+            details: {
+              timestamp: new Date().toISOString()
+            }
+          });
+      }
 
-    const { error } = await supabaseClient.auth.signOut();
-    if (error) throw error;
-    setTwoFactorEnabled(false);
-    router.push('/');
+      const { error } = await supabaseClient.auth.signOut();
+      if (error) throw error;
+      
+      setTwoFactorEnabled(false);
+      setUser(null);
+      
+      // Clear any local storage or cached data
+      if (typeof window !== 'undefined') {
+        localStorage.removeItem('supabase.auth.token');
+      }
+      
+      router.push('/');
+    } catch (error) {
+      console.error('Sign out error:', error);
+      throw error;
+    }
   };
 
   return {

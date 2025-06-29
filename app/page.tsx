@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/button';
 import { Heart, ArrowRight, Shield, Clock, MessageCircle, Sparkles, Users, Lock } from 'lucide-react';
 import Link from 'next/link';
 import { useAuth } from '@/hooks/use-auth';
+import { useRouter } from 'next/navigation';
 
 const onboardingSlides = [
   {
@@ -71,6 +72,7 @@ export default function Home() {
   const [showCTA, setShowCTA] = useState(false);
   const [mousePosition, setMousePosition] = useState({ x: 0, y: 0 });
   const { user, loading } = useAuth();
+  const router = useRouter();
 
   useEffect(() => {
     const handleMouseMove = (e: MouseEvent) => {
@@ -82,7 +84,10 @@ export default function Home() {
   }, []);
 
   useEffect(() => {
-    if (user) return;
+    if (user) {
+      router.push('/dashboard');
+      return;
+    }
     
     const timer = setInterval(() => {
       setCurrentSlide(prev => {
@@ -97,7 +102,7 @@ export default function Home() {
     }, 4000);
 
     return () => clearInterval(timer);
-  }, [user]);
+  }, [user, router]);
 
   if (loading) {
     return (
@@ -126,8 +131,7 @@ export default function Home() {
   }
 
   if (user) {
-    window.location.href = '/dashboard';
-    return null;
+    return null; // Will redirect to dashboard
   }
 
   const currentSlideData = onboardingSlides[currentSlide];
@@ -145,16 +149,16 @@ export default function Home() {
             key={`${currentSlide}-${i}`}
             className="absolute w-1 h-1 bg-gradient-to-r from-amber-400 to-rose-400 rounded-full"
             initial={{ 
-              x: Math.random() * window.innerWidth,
-              y: Math.random() * window.innerHeight,
+              x: Math.random() * (typeof window !== 'undefined' ? window.innerWidth : 1000),
+              y: Math.random() * (typeof window !== 'undefined' ? window.innerHeight : 1000),
               opacity: 0,
               scale: 0
             }}
             animate={{ 
               opacity: [0, 1, 0],
               scale: [0, 1, 0],
-              y: [null, Math.random() * window.innerHeight],
-              x: [null, Math.random() * window.innerWidth]
+              y: [null, Math.random() * (typeof window !== 'undefined' ? window.innerHeight : 1000)],
+              x: [null, Math.random() * (typeof window !== 'undefined' ? window.innerWidth : 1000)]
             }}
             transition={{
               duration: 6 + Math.random() * 4,
