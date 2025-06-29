@@ -66,6 +66,8 @@ export default function AuthPageClient() {
     
     try {
       await signInWithGoogle();
+      // Note: The redirect will happen automatically, so we don't set loading to false here
+      // unless there's an error
     } catch (err: any) {
       setError(err.message || 'Failed to sign in with Google');
       setGoogleLoading(false);
@@ -87,15 +89,15 @@ export default function AuthPageClient() {
             key={i}
             className="absolute w-1 h-1 bg-gradient-to-r from-amber-400 to-rose-400 rounded-full"
             initial={{ 
-              x: Math.random() * window.innerWidth,
-              y: Math.random() * window.innerHeight,
+              x: Math.random() * (typeof window !== 'undefined' ? window.innerWidth : 1000),
+              y: Math.random() * (typeof window !== 'undefined' ? window.innerHeight : 1000),
               opacity: 0
             }}
             animate={{ 
               opacity: [0, 1, 0],
               scale: [0, 1, 0],
-              y: [null, Math.random() * window.innerHeight],
-              x: [null, Math.random() * window.innerWidth]
+              y: [null, Math.random() * (typeof window !== 'undefined' ? window.innerHeight : 1000)],
+              x: [null, Math.random() * (typeof window !== 'undefined' ? window.innerWidth : 1000)]
             }}
             transition={{
               duration: 8 + Math.random() * 4,
@@ -344,12 +346,12 @@ export default function AuthPageClient() {
                       {googleLoading ? (
                         <>
                           <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                          Please wait...
+                          Redirecting to Google...
                         </>
                       ) : (
                         <>
                           <Chrome className="w-4 h-4 mr-2" />
-                          Google
+                          Continue with Google
                         </>
                       )}
                     </Button>

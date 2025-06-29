@@ -140,14 +140,26 @@ export function useAuth() {
   };
 
   const signInWithGoogle = async () => {
-    const { error } = await supabaseClient.auth.signInWithOAuth({
-      provider: 'google',
-      options: {
-        redirectTo: `${window.location.origin}/dashboard`
-      }
-    });
-    
-    if (error) throw error;
+    try {
+      // Get the current URL to determine the correct redirect URL
+      const currentUrl = window.location.origin;
+      
+      const { error } = await supabaseClient.auth.signInWithOAuth({
+        provider: 'google',
+        options: {
+          redirectTo: `${currentUrl}/dashboard`,
+          queryParams: {
+            access_type: 'offline',
+            prompt: 'consent',
+          }
+        }
+      });
+      
+      if (error) throw error;
+    } catch (error: any) {
+      console.error('Google sign in error:', error);
+      throw error;
+    }
   };
 
   const signOut = async () => {
