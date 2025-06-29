@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useEffect, useState, useRef } from 'react';
-import { motion, AnimatePresence, useScroll, useTransform } from 'framer-motion';
+import { motion, AnimatePresence } from 'framer-motion';
 import { Button } from '@/components/ui/button';
 import { Heart, ArrowRight, Shield, Clock, MessageCircle, Sparkles, Users, Lock, Star, Feather, Infinity, BookOpen } from 'lucide-react';
 import Link from 'next/link';
@@ -111,9 +111,6 @@ export default function Home() {
   const { user, loading } = useAuth();
   const router = useRouter();
   const containerRef = useRef<HTMLDivElement>(null);
-  const { scrollYProgress } = useScroll();
-  const opacity = useTransform(scrollYProgress, [0, 0.5], [1, 0]);
-  const scale = useTransform(scrollYProgress, [0, 0.5], [1, 0.8]);
 
   useEffect(() => {
     const handleMouseMove = (e: MouseEvent) => {
@@ -272,7 +269,10 @@ export default function Home() {
       {/* Main content */}
       <motion.div 
         className="relative z-10 min-h-screen flex flex-col"
-        style={{ opacity, scale }}
+        style={{ 
+          opacity: 1 - (scrollY / 1000),
+          scale: 1 - (scrollY / 2000)
+        }}
       >
         {/* Hero section */}
         <div className="flex-1 flex items-center justify-center px-8 py-20">
@@ -327,7 +327,6 @@ export default function Home() {
                       animate={{
                         scale: [0, 1, 0],
                         opacity: [0, 1, 0],
-                        rotate: [0, 360]
                       }}
                       transition={{
                         duration: 3,
@@ -388,7 +387,7 @@ export default function Home() {
                     <Link href="/auth">
                       <Button 
                         size="lg" 
-                        className="bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-600 hover:to-orange-600 text-slate-950 font-bold px-16 py-8 rounded-full text-2xl group transition-all duration-500 hover:scale-110 hover:shadow-2xl hover:shadow-amber-500/25 animate-pulse-glow"
+                        className="bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-600 hover:to-orange-600 text-slate-950 font-bold px-16 py-8 rounded-full text-2xl group transition-all duration-500 hover:scale-110 hover:shadow-2xl hover:shadow-amber-500/25"
                       >
                         <Sparkles className="mr-4 w-8 h-8 group-hover:rotate-12 transition-transform" />
                         Begin Your Legacy
