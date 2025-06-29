@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -24,7 +24,12 @@ export default function AuthPageClient() {
   const [needsTwoFactor, setNeedsTwoFactor] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
+  const [isClient, setIsClient] = useState(false);
   const { signIn, signUp, signInWithGoogle } = useAuth();
+
+  useEffect(() => {
+    setIsClient(true);
+  }, []);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -85,21 +90,21 @@ export default function AuthPageClient() {
       {/* Animated background elements */}
       <div className="absolute inset-0">
         {/* Floating particles */}
-        {[...Array(25)].map((_, i) => (
+        {isClient && [...Array(25)].map((_, i) => (
           <motion.div
             key={i}
             className="absolute w-1 h-1 bg-gradient-to-r from-amber-400/40 to-rose-400/40 rounded-full"
             initial={{ 
-              x: Math.random() * (typeof window !== 'undefined' ? window.innerWidth : 1000),
-              y: Math.random() * (typeof window !== 'undefined' ? window.innerHeight : 1000),
+              x: Math.random() * window.innerWidth,
+              y: Math.random() * window.innerHeight,
               opacity: 0,
               scale: 0
             }}
             animate={{ 
               opacity: [0, 1, 0],
               scale: [0, 1, 0],
-              y: [null, Math.random() * (typeof window !== 'undefined' ? window.innerHeight : 1000)],
-              x: [null, Math.random() * (typeof window !== 'undefined' ? window.innerWidth : 1000)]
+              y: [null, Math.random() * window.innerHeight],
+              x: [null, Math.random() * window.innerWidth]
             }}
             transition={{
               duration: 12 + Math.random() * 8,

@@ -108,11 +108,18 @@ export default function Home() {
   const [showCTA, setShowCTA] = useState(false);
   const [mousePosition, setMousePosition] = useState({ x: 0, y: 0 });
   const [scrollY, setScrollY] = useState(0);
+  const [isClient, setIsClient] = useState(false);
   const { user, loading } = useAuth();
   const router = useRouter();
   const containerRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
+    setIsClient(true);
+  }, []);
+
+  useEffect(() => {
+    if (!isClient) return;
+
     const handleMouseMove = (e: MouseEvent) => {
       setMousePosition({ x: e.clientX, y: e.clientY });
     };
@@ -128,7 +135,7 @@ export default function Home() {
       window.removeEventListener('mousemove', handleMouseMove);
       window.removeEventListener('scroll', handleScroll);
     };
-  }, []);
+  }, [isClient]);
 
   useEffect(() => {
     if (user) {
@@ -199,21 +206,21 @@ export default function Home() {
       {/* Animated background particles */}
       <div className="absolute inset-0 overflow-hidden">
         {/* Floating particles */}
-        {[...Array(30)].map((_, i) => (
+        {isClient && [...Array(30)].map((_, i) => (
           <motion.div
             key={`particle-${i}`}
             className="absolute w-1 h-1 bg-gradient-to-r from-amber-400/30 to-rose-400/30 rounded-full"
             initial={{ 
-              x: Math.random() * (typeof window !== 'undefined' ? window.innerWidth : 1000),
-              y: Math.random() * (typeof window !== 'undefined' ? window.innerHeight : 1000),
+              x: Math.random() * window.innerWidth,
+              y: Math.random() * window.innerHeight,
               opacity: 0,
               scale: 0
             }}
             animate={{ 
               opacity: [0, 0.8, 0],
               scale: [0, 1, 0],
-              y: [null, Math.random() * (typeof window !== 'undefined' ? window.innerHeight : 1000)],
-              x: [null, Math.random() * (typeof window !== 'undefined' ? window.innerWidth : 1000)]
+              y: [null, Math.random() * window.innerHeight],
+              x: [null, Math.random() * window.innerWidth]
             }}
             transition={{
               duration: 15 + Math.random() * 10,
@@ -248,22 +255,24 @@ export default function Home() {
         </div>
 
         {/* Mouse follower effect */}
-        <motion.div
-          className="absolute w-96 h-96 rounded-full pointer-events-none opacity-30"
-          style={{
-            background: `radial-gradient(circle, ${
-              currentQuoteData.emotion === 'love' ? 'rgba(244, 114, 182, 0.1)' :
-              currentQuoteData.emotion === 'hope' ? 'rgba(52, 211, 153, 0.1)' :
-              currentQuoteData.emotion === 'wisdom' ? 'rgba(251, 191, 36, 0.1)' :
-              'rgba(167, 139, 250, 0.1)'
-            } 0%, transparent 70%)`,
-          }}
-          animate={{
-            x: mousePosition.x - 192,
-            y: mousePosition.y - 192,
-          }}
-          transition={{ type: "spring", damping: 30, stiffness: 200 }}
-        />
+        {isClient && (
+          <motion.div
+            className="absolute w-96 h-96 rounded-full pointer-events-none opacity-30"
+            style={{
+              background: `radial-gradient(circle, ${
+                currentQuoteData.emotion === 'love' ? 'rgba(244, 114, 182, 0.1)' :
+                currentQuoteData.emotion === 'hope' ? 'rgba(52, 211, 153, 0.1)' :
+                currentQuoteData.emotion === 'wisdom' ? 'rgba(251, 191, 36, 0.1)' :
+                'rgba(167, 139, 250, 0.1)'
+              } 0%, transparent 70%)`,
+            }}
+            animate={{
+              x: mousePosition.x - 192,
+              y: mousePosition.y - 192,
+            }}
+            transition={{ type: "spring", damping: 30, stiffness: 200 }}
+          />
+        )}
       </div>
 
       {/* Main content */}

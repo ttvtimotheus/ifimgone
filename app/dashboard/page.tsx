@@ -47,6 +47,11 @@ export default function Dashboard() {
   const [trustedContacts, setTrustedContacts] = useState(0);
   const [showProfileWidget, setShowProfileWidget] = useState(true);
   const [currentQuote, setCurrentQuote] = useState(0);
+  const [isClient, setIsClient] = useState(false);
+
+  useEffect(() => {
+    setIsClient(true);
+  }, []);
 
   // Rotate inspirational quotes
   useEffect(() => {
@@ -135,20 +140,20 @@ export default function Dashboard() {
       <div className="min-h-screen bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950 relative">
         {/* Ambient background particles */}
         <div className="absolute inset-0 overflow-hidden">
-          {[...Array(20)].map((_, i) => (
+          {isClient && [...Array(20)].map((_, i) => (
             <motion.div
               key={i}
               className="absolute w-1 h-1 bg-gradient-to-r from-amber-400/20 to-rose-400/20 rounded-full"
               initial={{ 
-                x: Math.random() * (typeof window !== 'undefined' ? window.innerWidth : 1000),
-                y: Math.random() * (typeof window !== 'undefined' ? window.innerHeight : 1000),
+                x: Math.random() * window.innerWidth,
+                y: Math.random() * window.innerHeight,
                 opacity: 0
               }}
               animate={{ 
                 opacity: [0, 0.6, 0],
                 scale: [0, 1, 0],
-                y: [null, Math.random() * (typeof window !== 'undefined' ? window.innerHeight : 1000)],
-                x: [null, Math.random() * (typeof window !== 'undefined' ? window.innerWidth : 1000)]
+                y: [null, Math.random() * window.innerHeight],
+                x: [null, Math.random() * window.innerWidth]
               }}
               transition={{
                 duration: 15 + Math.random() * 10,
