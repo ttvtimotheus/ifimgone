@@ -109,6 +109,7 @@ export default function AuthPageClient() {
             transition={{
               duration: 12 + Math.random() * 8,
               repeat: Infinity,
+              repeatType: "loop",
               delay: Math.random() * 6,
               ease: "easeInOut"
             }}
@@ -132,6 +133,7 @@ export default function AuthPageClient() {
               transition={{
                 duration: 4 + Math.random() * 6,
                 repeat: Infinity,
+                repeatType: "loop",
                 delay: Math.random() * 8
               }}
             />
@@ -160,6 +162,7 @@ export default function AuthPageClient() {
               transition={{ 
                 duration: 3,
                 repeat: Infinity,
+                repeatType: "loop",
                 ease: "easeInOut"
               }}
             >
@@ -181,6 +184,7 @@ export default function AuthPageClient() {
                   transition={{
                     duration: 2,
                     repeat: Infinity,
+                    repeatType: "loop",
                     delay: i * 0.7,
                   }}
                 />

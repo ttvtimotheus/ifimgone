@@ -179,6 +179,7 @@ export default function Home() {
           transition={{ 
             duration: 3,
             repeat: Infinity,
+            repeatType: "loop",
             ease: "easeInOut"
           }}
           className="relative"
@@ -187,7 +188,7 @@ export default function Home() {
           <motion.div
             className="absolute inset-0 rounded-full border-2 border-amber-500/30"
             animate={{ scale: [1, 2, 1], opacity: [1, 0, 1] }}
-            transition={{ duration: 3, repeat: Infinity }}
+            transition={{ duration: 3, repeat: Infinity, repeatType: "loop" }}
           />
         </motion.div>
       </div>
@@ -225,6 +226,7 @@ export default function Home() {
             transition={{
               duration: 15 + Math.random() * 10,
               repeat: Infinity,
+              repeatType: "loop",
               delay: Math.random() * 8,
               ease: "easeInOut"
             }}
@@ -248,6 +250,7 @@ export default function Home() {
               transition={{
                 duration: 3 + Math.random() * 4,
                 repeat: Infinity,
+                repeatType: "loop",
                 delay: Math.random() * 5
               }}
             />
@@ -319,6 +322,7 @@ export default function Home() {
                   transition={{ 
                     duration: 4,
                     repeat: Infinity,
+                    repeatType: "loop",
                     ease: "easeInOut"
                   }}
                 >
@@ -340,6 +344,7 @@ export default function Home() {
                       transition={{
                         duration: 3,
                         repeat: Infinity,
+                        repeatType: "loop",
                         delay: i * 0.2,
                       }}
                     />
@@ -358,6 +363,7 @@ export default function Home() {
                     transition={{
                       duration: 3,
                       repeat: Infinity,
+                      repeatType: "loop",
                       ease: "easeInOut"
                     }}
                   />
