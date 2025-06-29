@@ -34,3 +34,11 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+._package-lock.json
+._package.json
+app/._page.tsx
+app/auth/._client.tsx
+app/dashboard/._page.tsx
+hooks/._use-auth.ts
+hooks/._use-toast.ts
+._.gitignore
