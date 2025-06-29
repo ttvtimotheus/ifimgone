@@ -1,14 +1,14 @@
 'use client';
 
 import { useState } from 'react';
-import { motion } from 'framer-motion';
+import { motion, AnimatePresence } from 'framer-motion';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Label } from '@/components/ui/label';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Separator } from '@/components/ui/separator';
-import { Heart, Mail, Lock, ArrowLeft, Chrome, Loader2, Shield, Sparkles, Eye, EyeOff } from 'lucide-react';
+import { Heart, Mail, Lock, ArrowLeft, Chrome, Loader2, Shield, Sparkles, Eye, EyeOff, Star, Feather } from 'lucide-react';
 import Link from 'next/link';
 import { useAuth } from '@/hooks/use-auth';
 
@@ -84,14 +84,16 @@ export default function AuthPageClient() {
     <div className="min-h-screen bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950 relative overflow-hidden">
       {/* Animated background elements */}
       <div className="absolute inset-0">
-        {[...Array(20)].map((_, i) => (
+        {/* Floating particles */}
+        {[...Array(25)].map((_, i) => (
           <motion.div
             key={i}
-            className="absolute w-1 h-1 bg-gradient-to-r from-amber-400 to-rose-400 rounded-full"
+            className="absolute w-1 h-1 bg-gradient-to-r from-amber-400/40 to-rose-400/40 rounded-full"
             initial={{ 
               x: Math.random() * (typeof window !== 'undefined' ? window.innerWidth : 1000),
               y: Math.random() * (typeof window !== 'undefined' ? window.innerHeight : 1000),
-              opacity: 0
+              opacity: 0,
+              scale: 0
             }}
             animate={{ 
               opacity: [0, 1, 0],
@@ -100,191 +102,253 @@ export default function AuthPageClient() {
               x: [null, Math.random() * (typeof window !== 'undefined' ? window.innerWidth : 1000)]
             }}
             transition={{
-              duration: 8 + Math.random() * 4,
+              duration: 12 + Math.random() * 8,
               repeat: Infinity,
-              delay: Math.random() * 4,
+              delay: Math.random() * 6,
               ease: "easeInOut"
             }}
           />
         ))}
+
+        {/* Constellation background */}
+        <div className="absolute inset-0">
+          {[...Array(40)].map((_, i) => (
+            <motion.div
+              key={`constellation-${i}`}
+              className="absolute w-0.5 h-0.5 bg-white/10 rounded-full"
+              style={{
+                left: `${Math.random() * 100}%`,
+                top: `${Math.random() * 100}%`,
+              }}
+              animate={{
+                opacity: [0.1, 0.6, 0.1],
+                scale: [0.5, 1.2, 0.5]
+              }}
+              transition={{
+                duration: 4 + Math.random() * 6,
+                repeat: Infinity,
+                delay: Math.random() * 8
+              }}
+            />
+          ))}
+        </div>
       </div>
       
       <div className="relative z-10 min-h-screen flex items-center justify-center p-4">
         <motion.div
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.6 }}
+          initial={{ opacity: 0, y: 30, scale: 0.95 }}
+          animate={{ opacity: 1, y: 0, scale: 1 }}
+          transition={{ duration: 0.8, ease: "easeOut" }}
           className="w-full max-w-md"
         >
           <div className="text-center mb-8">
-            <Link href="/" className="inline-flex items-center text-slate-400 hover:text-white transition-colors mb-6 group">
+            <Link href="/" className="inline-flex items-center text-slate-400 hover:text-white transition-colors mb-8 group">
               <ArrowLeft className="w-4 h-4 mr-2 group-hover:-translate-x-1 transition-transform" />
-              Back to home
+              <span className="font-light">Return to reflection</span>
             </Link>
             
             <motion.div 
-              className="inline-flex items-center justify-center w-20 h-20 rounded-full bg-gradient-to-br from-amber-500/20 to-red-500/20 border border-white/10 mb-6 backdrop-blur-sm"
+              className="inline-flex items-center justify-center w-24 h-24 rounded-full bg-gradient-to-br from-amber-500/20 to-red-500/20 border border-white/10 mb-8 backdrop-blur-sm relative"
               animate={{ 
                 scale: [1, 1.05, 1],
-                boxShadow: [
-                  "0 0 0 0 rgba(245, 158, 11, 0)",
-                  "0 0 0 10px rgba(245, 158, 11, 0.1)",
-                  "0 0 0 0 rgba(245, 158, 11, 0)"
-                ]
               }}
               transition={{ 
-                duration: 2,
+                duration: 3,
                 repeat: Infinity,
                 ease: "easeInOut"
               }}
             >
-              <Heart className="w-10 h-10 text-amber-500" />
+              <Heart className="w-12 h-12 text-amber-500" />
+              
+              {/* Orbital elements */}
+              {[...Array(3)].map((_, i) => (
+                <motion.div
+                  key={i}
+                  className="absolute w-1 h-1 bg-amber-400/60 rounded-full"
+                  style={{
+                    top: `${50 + Math.sin(i * 120 * Math.PI / 180) * 40}%`,
+                    left: `${50 + Math.cos(i * 120 * Math.PI / 180) * 40}%`,
+                  }}
+                  animate={{
+                    scale: [0, 1, 0],
+                    opacity: [0, 1, 0],
+                  }}
+                  transition={{
+                    duration: 2,
+                    repeat: Infinity,
+                    delay: i * 0.7,
+                  }}
+                />
+              ))}
             </motion.div>
             
-            <h1 className="text-3xl font-bold text-white mb-2">
-              {needsTwoFactor ? 'Two-Factor Authentication' : 
-               isSignUp ? 'Create Your Account' : 'Welcome Back'}
+            <h1 className="text-4xl font-bold text-white mb-3 font-serif">
+              {needsTwoFactor ? 'Secure Verification' : 
+               isSignUp ? 'Begin Your Journey' : 'Welcome Back'}
             </h1>
-            <p className="text-slate-400">
-              {needsTwoFactor ? 'Enter your 6-digit authentication code' :
+            <p className="text-slate-400 leading-relaxed">
+              {needsTwoFactor ? 'Enter your authentication code to continue' :
                isSignUp 
-                ? 'Begin creating your digital legacy' 
+                ? 'Create an account to preserve your legacy' 
                 : 'Continue your journey of remembrance'
               }
             </p>
           </div>
 
-          <Card className="border-slate-800 bg-slate-900/50 backdrop-blur-sm shadow-2xl">
-            <CardHeader>
-              <CardTitle className="text-white flex items-center">
+          <Card className="border-slate-800/50 bg-slate-900/30 backdrop-blur-xl shadow-2xl">
+            <CardHeader className="text-center pb-6">
+              <CardTitle className="text-white flex items-center justify-center">
                 {needsTwoFactor ? (
                   <>
-                    <Shield className="w-5 h-5 mr-2" />
-                    Verify Your Identity
+                    <Shield className="w-5 h-5 mr-2 text-amber-500" />
+                    Two-Factor Authentication
                   </>
                 ) : (
                   <>
-                    <Sparkles className="w-5 h-5 mr-2" />
-                    {isSignUp ? 'Sign Up' : 'Sign In'}
+                    <Sparkles className="w-5 h-5 mr-2 text-amber-500" />
+                    {isSignUp ? 'Create Account' : 'Sign In'}
                   </>
                 )}
               </CardTitle>
-              <CardDescription>
+              <CardDescription className="text-slate-400">
                 {needsTwoFactor 
-                  ? 'Check your authentication app for the code' 
-                  : 'Enter your details below to continue'
+                  ? 'Check your authentication app for the verification code' 
+                  : 'Enter your details to continue your digital legacy journey'
                 }
               </CardDescription>
             </CardHeader>
             <CardContent>
-              <form onSubmit={handleSubmit} className="space-y-4">
-                {!needsTwoFactor && (
-                  <>
-                    <div className="space-y-2">
-                      <Label htmlFor="email" className="text-slate-300">Email</Label>
-                      <div className="relative">
-                        <Mail className="absolute left-3 top-3 w-4 h-4 text-slate-400" />
-                        <Input
-                          id="email"
-                          type="email"
-                          placeholder="you@example.com"
-                          value={email}
-                          onChange={(e) => setEmail(e.target.value)}
-                          className="pl-10 bg-slate-800 border-slate-700 text-white placeholder:text-slate-400 focus:border-amber-500 focus:ring-amber-500/20"
-                          required
-                          disabled={loading || googleLoading}
-                        />
-                      </div>
-                    </div>
-
-                    <div className="space-y-2">
-                      <Label htmlFor="password" className="text-slate-300">Password</Label>
-                      <div className="relative">
-                        <Lock className="absolute left-3 top-3 w-4 h-4 text-slate-400" />
-                        <Input
-                          id="password"
-                          type={showPassword ? "text" : "password"}
-                          placeholder="••••••••"
-                          value={password}
-                          onChange={(e) => setPassword(e.target.value)}
-                          className="pl-10 pr-10 bg-slate-800 border-slate-700 text-white placeholder:text-slate-400 focus:border-amber-500 focus:ring-amber-500/20"
-                          required
-                          disabled={loading || googleLoading}
-                        />
-                        <button
-                          type="button"
-                          onClick={() => setShowPassword(!showPassword)}
-                          className="absolute right-3 top-3 text-slate-400 hover:text-white transition-colors"
-                        >
-                          {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                        </button>
-                      </div>
-                    </div>
-
-                    {isSignUp && (
+              <form onSubmit={handleSubmit} className="space-y-6">
+                <AnimatePresence mode="wait">
+                  {!needsTwoFactor ? (
+                    <motion.div
+                      initial={{ opacity: 0, x: -20 }}
+                      animate={{ opacity: 1, x: 0 }}
+                      exit={{ opacity: 0, x: 20 }}
+                      transition={{ duration: 0.3 }}
+                      className="space-y-4"
+                    >
                       <div className="space-y-2">
-                        <Label htmlFor="confirmPassword" className="text-slate-300">Confirm Password</Label>
+                        <Label htmlFor="email" className="text-slate-300 font-medium">Email Address</Label>
+                        <div className="relative">
+                          <Mail className="absolute left-3 top-3 w-4 h-4 text-slate-400" />
+                          <Input
+                            id="email"
+                            type="email"
+                            placeholder="your@email.com"
+                            value={email}
+                            onChange={(e) => setEmail(e.target.value)}
+                            className="pl-10 bg-slate-800/50 border-slate-700/50 text-white placeholder:text-slate-500 focus:border-amber-500 focus:ring-amber-500/20 transition-all duration-300"
+                            required
+                            disabled={loading || googleLoading}
+                          />
+                        </div>
+                      </div>
+
+                      <div className="space-y-2">
+                        <Label htmlFor="password" className="text-slate-300 font-medium">Password</Label>
                         <div className="relative">
                           <Lock className="absolute left-3 top-3 w-4 h-4 text-slate-400" />
                           <Input
-                            id="confirmPassword"
-                            type={showConfirmPassword ? "text" : "password"}
+                            id="password"
+                            type={showPassword ? "text" : "password"}
                             placeholder="••••••••"
-                            value={confirmPassword}
-                            onChange={(e) => setConfirmPassword(e.target.value)}
-                            className="pl-10 pr-10 bg-slate-800 border-slate-700 text-white placeholder:text-slate-400 focus:border-amber-500 focus:ring-amber-500/20"
+                            value={password}
+                            onChange={(e) => setPassword(e.target.value)}
+                            className="pl-10 pr-10 bg-slate-800/50 border-slate-700/50 text-white placeholder:text-slate-500 focus:border-amber-500 focus:ring-amber-500/20 transition-all duration-300"
                             required
                             disabled={loading || googleLoading}
                           />
                           <button
                             type="button"
-                            onClick={() => setShowConfirmPassword(!showConfirmPassword)}
+                            onClick={() => setShowPassword(!showPassword)}
                             className="absolute right-3 top-3 text-slate-400 hover:text-white transition-colors"
                           >
-                            {showConfirmPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                            {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                           </button>
                         </div>
                       </div>
-                    )}
-                  </>
-                )}
 
-                {/* Two-Factor Authentication Input */}
-                {needsTwoFactor && (
-                  <div className="space-y-2">
-                    <Label htmlFor="twoFactorToken" className="text-slate-300">Authentication Code</Label>
-                    <div className="relative">
-                      <Shield className="absolute left-3 top-3 w-4 h-4 text-slate-400" />
-                      <Input
-                        id="twoFactorToken"
-                        type="text"
-                        placeholder="000000"
-                        value={twoFactorToken}
-                        onChange={(e) => setTwoFactorToken(e.target.value.replace(/\D/g, '').slice(0, 6))}
-                        className="pl-10 bg-slate-800 border-slate-700 text-white placeholder:text-slate-400 text-center tracking-widest focus:border-amber-500 focus:ring-amber-500/20"
-                        maxLength={6}
-                        required
-                        disabled={loading}
-                        autoFocus
-                      />
-                    </div>
-                    <p className="text-xs text-slate-500">
-                      Enter the 6-digit code from your authenticator app
-                    </p>
-                  </div>
-                )}
+                      {isSignUp && (
+                        <motion.div
+                          initial={{ opacity: 0, height: 0 }}
+                          animate={{ opacity: 1, height: 'auto' }}
+                          transition={{ duration: 0.3 }}
+                          className="space-y-2"
+                        >
+                          <Label htmlFor="confirmPassword" className="text-slate-300 font-medium">Confirm Password</Label>
+                          <div className="relative">
+                            <Lock className="absolute left-3 top-3 w-4 h-4 text-slate-400" />
+                            <Input
+                              id="confirmPassword"
+                              type={showConfirmPassword ? "text" : "password"}
+                              placeholder="••••••••"
+                              value={confirmPassword}
+                              onChange={(e) => setConfirmPassword(e.target.value)}
+                              className="pl-10 pr-10 bg-slate-800/50 border-slate-700/50 text-white placeholder:text-slate-500 focus:border-amber-500 focus:ring-amber-500/20 transition-all duration-300"
+                              required
+                              disabled={loading || googleLoading}
+                            />
+                            <button
+                              type="button"
+                              onClick={() => setShowConfirmPassword(!showConfirmPassword)}
+                              className="absolute right-3 top-3 text-slate-400 hover:text-white transition-colors"
+                            >
+                              {showConfirmPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                            </button>
+                          </div>
+                        </motion.div>
+                      )}
+                    </motion.div>
+                  ) : (
+                    <motion.div
+                      initial={{ opacity: 0, x: 20 }}
+                      animate={{ opacity: 1, x: 0 }}
+                      transition={{ duration: 0.3 }}
+                      className="space-y-4"
+                    >
+                      <div className="space-y-2">
+                        <Label htmlFor="twoFactorToken" className="text-slate-300 font-medium">Authentication Code</Label>
+                        <div className="relative">
+                          <Shield className="absolute left-3 top-3 w-4 h-4 text-slate-400" />
+                          <Input
+                            id="twoFactorToken"
+                            type="text"
+                            placeholder="000000"
+                            value={twoFactorToken}
+                            onChange={(e) => setTwoFactorToken(e.target.value.replace(/\D/g, '').slice(0, 6))}
+                            className="pl-10 bg-slate-800/50 border-slate-700/50 text-white placeholder:text-slate-500 text-center tracking-widest focus:border-amber-500 focus:ring-amber-500/20 transition-all duration-300"
+                            maxLength={6}
+                            required
+                            disabled={loading}
+                            autoFocus
+                          />
+                        </div>
+                        <p className="text-xs text-slate-500 text-center">
+                          Enter the 6-digit code from your authenticator app
+                        </p>
+                      </div>
+                    </motion.div>
+                  )}
+                </AnimatePresence>
 
                 {error && (
-                  <Alert className="border-red-500/50 bg-red-500/10">
-                    <AlertDescription className="text-red-400">
-                      {error}
-                    </AlertDescription>
-                  </Alert>
+                  <motion.div
+                    initial={{ opacity: 0, y: -10 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    className="rounded-lg"
+                  >
+                    <Alert className="border-red-500/50 bg-red-500/10 backdrop-blur-sm">
+                      <AlertDescription className="text-red-400">
+                        {error}
+                      </AlertDescription>
+                    </Alert>
+                  </motion.div>
                 )}
 
                 <Button 
                   type="submit" 
-                  className="w-full bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-600 hover:to-orange-600 text-slate-950 font-semibold transition-all duration-300 hover:scale-[1.02] hover:shadow-lg"
+                  className="w-full bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-600 hover:to-orange-600 text-slate-950 font-semibold transition-all duration-300 hover:scale-[1.02] hover:shadow-lg hover:shadow-amber-500/25 py-6"
                   disabled={loading || googleLoading || (needsTwoFactor && twoFactorToken.length !== 6)}
                 >
                   {loading ? (
@@ -293,9 +357,15 @@ export default function AuthPageClient() {
                       Please wait...
                     </>
                   ) : needsTwoFactor ? (
-                    'Verify Code'
+                    <>
+                      <Shield className="w-4 h-4 mr-2" />
+                      Verify Code
+                    </>
                   ) : (
-                    isSignUp ? 'Create Account' : 'Sign In'
+                    <>
+                      <Feather className="w-4 h-4 mr-2" />
+                      {isSignUp ? 'Create Account' : 'Sign In'}
+                    </>
                   )}
                 </Button>
 
@@ -304,10 +374,10 @@ export default function AuthPageClient() {
                     <button
                       type="button"
                       onClick={resetForm}
-                      className="text-amber-400 hover:text-amber-300 text-sm transition-colors"
+                      className="text-amber-400 hover:text-amber-300 text-sm transition-colors font-medium"
                       disabled={loading}
                     >
-                      Back to login
+                      ← Back to login
                     </button>
                   </div>
                 ) : (
@@ -315,7 +385,7 @@ export default function AuthPageClient() {
                     <button
                       type="button"
                       onClick={() => setIsSignUp(!isSignUp)}
-                      className="text-amber-400 hover:text-amber-300 text-sm transition-colors"
+                      className="text-amber-400 hover:text-amber-300 text-sm transition-colors font-medium"
                       disabled={loading || googleLoading}
                     >
                       {isSignUp 
@@ -328,19 +398,19 @@ export default function AuthPageClient() {
 
                 {!needsTwoFactor && !isSignUp && (
                   <>
-                    <div className="relative my-6">
+                    <div className="relative my-8">
                       <div className="absolute inset-0 flex items-center">
-                        <Separator className="w-full border-slate-700" />
+                        <Separator className="w-full border-slate-700/50" />
                       </div>
                       <div className="relative flex justify-center text-xs">
-                        <span className="bg-slate-900 px-2 text-slate-500">Or continue with</span>
+                        <span className="bg-slate-900 px-4 text-slate-500 font-medium">Or continue with</span>
                       </div>
                     </div>
 
                     <Button
                       type="button"
                       onClick={handleGoogleSignIn}
-                      className="w-full bg-slate-800 hover:bg-slate-700 text-white border border-slate-700 transition-all duration-300 hover:scale-[1.02]"
+                      className="w-full bg-slate-800/50 hover:bg-slate-700/50 text-white border border-slate-700/50 transition-all duration-300 hover:scale-[1.02] backdrop-blur-sm py-6"
                       disabled={loading || googleLoading}
                     >
                       {googleLoading ? (
@@ -362,11 +432,17 @@ export default function AuthPageClient() {
           </Card>
 
           {/* Security notice */}
-          <div className="text-center mt-6">
-            <p className="text-xs text-slate-500">
-              Protected by enterprise-grade security • Your data is encrypted
+          <motion.div 
+            className="text-center mt-8"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            transition={{ delay: 0.5 }}
+          >
+            <p className="text-xs text-slate-500 leading-relaxed">
+              <Shield className="w-3 h-3 inline mr-1" />
+              Protected by enterprise-grade security • Your legacy is encrypted and sacred
             </p>
-          </div>
+          </motion.div>
         </motion.div>
       </div>
     </div>
