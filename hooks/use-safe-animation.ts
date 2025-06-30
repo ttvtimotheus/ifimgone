@@ -11,6 +11,62 @@ export function useSafeAnimation() {
 
   // Mark component as unmounted when it unmounts
   useEffect(() => {
+    // Fix for WAAPI animations with NaN iterations
+    if (typeof window !== 'undefined') {
+      // We can't modify the prototype directly due to TypeScript restrictions
+      // Instead, we'll use a MutationObserver to detect and fix animations
+      const fixAnimations = () => {
+        if (!document) return;
+        try {
+          document.querySelectorAll('*').forEach(element => {
+            const animations = (element as any).getAnimations?.();
+            if (animations) {
+              animations.forEach((animation: any) => {
+                try {
+                  if (animation && animation.effect && typeof animation.effect.updateTiming === 'function') {
+                    const timing = animation.effect.getTiming?.();
+                    if (timing && (timing.iterations === undefined || isNaN(timing.iterations))) {
+                      // Fix the NaN iterations by setting it to 1
+                      animation.effect.updateTiming({ iterations: 1 });
+                    }
+                  }
+                } catch (e) {
+                  // Silently handle errors
+                }
+              });
+            }
+          });
+        } catch (e) {
+          // Silently handle errors
+        }
+      };
+      
+      // Run the fix periodically
+      const intervalId = setInterval(fixAnimations, 1000);
+      
+      // Also run it on DOM mutations
+      const observer = new MutationObserver(fixAnimations);
+      observer.observe(document.body, { childList: true, subtree: true });
+      
+      // Clean up
+      return () => {
+        clearInterval(intervalId);
+        observer.disconnect();
+        isMountedRef.current = false;
+        // Clean up any remaining animation references
+        animationRefs.current.forEach(ref => {
+          if (ref && typeof ref.stop === 'function') {
+            try {
+              ref.stop();
+            } catch (e) {
+              // Silently handle cleanup errors
+            }
+          }
+        });
+        animationRefs.current.clear();
+      };
+    }
+    
     return () => {
       isMountedRef.current = false;
       // Clean up any remaining animation references
@@ -50,6 +106,17 @@ export function useSafeAnimation() {
       try {
         const animation = animateFunction();
         if (animation) {
+          // If this is a WAAPI animation, ensure iterations is valid
+          if (animation.effect && typeof animation.effect.updateTiming === 'function') {
+            try {
+              const timing = animation.effect.getTiming?.();
+              if (timing && (timing.iterations === undefined || isNaN(timing.iterations))) {
+                animation.effect.updateTiming({ iterations: 1 });
+              }
+            } catch (e) {
+              // Silently handle errors
+            }
+          }
           registerAnimation(animation);
         }
         return animation;
@@ -155,6 +222,37 @@ export const SafeAnimatePresenceProps = {
     if (typeof window !== 'undefined') {
       window.requestAnimationFrame(() => {
         // Cleanup any lingering animation references
+        try {
+          document.querySelectorAll('*').forEach(element => {
+            try {
+              const animations = (element as any).getAnimations?.();
+              if (animations) {
+                animations.forEach((animation: any) => {
+                  try {
+                    // Fix or cancel animations with NaN iterations
+                    if (animation && animation.effect) {
+                      if (typeof animation.effect.updateTiming === 'function') {
+                        const timing = animation.effect.getTiming?.();
+                        if (timing && (timing.iterations === undefined || isNaN(timing.iterations))) {
+                          animation.effect.updateTiming({ iterations: 1 });
+                        }
+                      } else if (typeof animation.cancel === 'function') {
+                        // If we can't update timing, cancel the animation
+                        animation.cancel();
+                      }
+                    }
+                  } catch (e) {
+                    // Silently handle errors
+                  }
+                });
+              }
+            } catch (e) {
+              // Silently handle errors for this element
+            }
+          });
+        } catch (e) {
+          // Silently handle any errors
+        }
       });
     }
   }
