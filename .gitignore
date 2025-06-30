@@ -42,3 +42,7 @@ app/dashboard/._page.tsx
 hooks/._use-auth.ts
 hooks/._use-toast.ts
 ._.gitignore
+._styles
+app/._globals.css
+app/._page-old-broken.tsx
+styles/._design-system.css
